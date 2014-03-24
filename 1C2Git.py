@@ -1,8 +1,7 @@
 #!/usr/local/bin/python
 import sys
 import xml.etree.ElementTree as etree
-
-
+import pyodbc
 __author__ = 'jgoncharova'
 
 parametrs = {}
@@ -104,18 +103,29 @@ def	read_item_dependency(metadata_item):
 	"""
 	
 	
-	file_name = parametrs['full_text_catalog']+'\\'+metadata_item['type']+'\\'+metadata_item['name']+'.xml'
+	this_file_name = parametrs['full_text_catalog']+'\\'+metadata_item['type']+'\\'+metadata_item['name']+'.xml'
 	
-	file_tree = etree.parse(file_name)
-	dependencies[read_object_uuid(file_name)]=file_name
+	file_tree = etree.parse(this_file_name)
+	dependencies[read_object_uuid(this_file_name)]=this_file_name
 	
-	#подтягиваем формы
+	#подтягиваем формы и отчеты
 	if len(file_tree.getroot()[0])>2: #считывать дочерние объекты по номеру узла в дереве слишком грубо
 		children=file_tree.getroot()[0][2]
+		
 		form_elements = children.findall('{http://v8.1c.ru/8.3/MDClasses}Form')
 		for form_element in form_elements:
 			file_name = parametrs['full_text_catalog']+'\\'+metadata_item['type']+'\\'+metadata_item['name']+'\\Form\\'+form_element.text+'.xml'
 			dependencies[read_object_uuid(file_name)]=file_name
+		
+		template_elements = children.findall('{http://v8.1c.ru/8.3/MDClasses}Template')
+		for template_element in template_elements:
+			file_name = parametrs['full_text_catalog']+'\\'+metadata_item['type']+'\\'+metadata_item['name']+'\\Template\\'+template_element.text+'.xml'
+			dependencies[read_object_uuid(file_name)]=file_name
+
+		command_elements = children.findall('{http://v8.1c.ru/8.3/MDClasses}Command')
+		for command_element in command_elements:
+			dependencies[command_element.attrib['uuid']]=this_file_name+'_command'
+		#осталось поискать вложенные папки в subsystem
 			
 	
 	
@@ -141,7 +151,17 @@ def save_1c():
 	
 	print (len(dependencies))
 	
+	#ищем потеряшек
+	db=pyodbc.connect('DRIVER={SQL Server};SERVER=la-db4test;DATABASE=1S-MSK-BUH3-UnitStand;UID=s-1c-03;PWD=pwd')
+	cursor=db.cursor()
+	cursor.execute('''SELECT FileName FROM Config''')
 	
+	for row in cursor.fetchall():
+		short_ref=row[0][:36]
+		if dependencies.get(short_ref,'none')=='none':
+			print(row[0])
+	cursor.close()
+	db.close()
 	
 # основная программа
 
