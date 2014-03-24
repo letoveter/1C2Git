@@ -158,17 +158,16 @@ def save_1c():
 	
 	for row in cursor.fetchall():
 		short_ref=row[0][:36]
-		if dependencies.get(short_ref,'none')=='none':
+		if dependencies.get(short_ref,None) is None:
 			print(row[0])
 	cursor.close()
 	db.close()
 	
-# основная программа
+if __name__ == '__main__': 
+	Operation = sys.argv[1]
 
-Operation = sys.argv[1]
-
-if Operation == '-s':
-	 save_1c()
+	if Operation == '-s':
+		save_1c()
 
 
 
