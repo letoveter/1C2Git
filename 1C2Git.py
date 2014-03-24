@@ -18,8 +18,6 @@ def read_meta_object(node,type):
 	meta_table_list.extend(elements_defined_list)
 
 
-
-
 def read_meta_table():
 	'''
 	считывает список метаданных из файла Configuration.xml
@@ -70,8 +68,6 @@ def read_meta_table():
 	read_meta_object(children_objects,'ChartOfCalculationTypes')
 
 
-
-
 def read_ini_file():
 	"""
 	считываем файл с настройками
@@ -91,6 +87,7 @@ def read_ini_file():
 		section_content = current_section.split(']')
 
 		if section_content[0]=='main':
+			
 			ini_file_strngs=section_content[1].split('\n')
 
 			for param_string in ini_file_strngs:
@@ -100,8 +97,7 @@ def read_ini_file():
 			
 	
 	ini_file.close()
-	
-	return parametrs
+
 	
 def	read_item_dependency(metadata_item):
 	
@@ -113,8 +109,8 @@ def read_dependency():
 		read_item_dependency(metadata_item)
 
 def save_1c():
-	parametrs = read_ini_file()
-		
+	read_ini_file()
+	print(parametrs)	
 	read_meta_table()
 	
 	read_item_dependency(meta_table_list[1525])
