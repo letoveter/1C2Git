@@ -6,15 +6,12 @@ import xml.etree.ElementTree as etree
 __author__ = 'jgoncharova'
 
 parametrs = {}
-meta_table_dict = {}
 meta_table_list = []
 dependencies = {}
 
 def read_meta_object(node,type):
 
 	elements_list = node.findall("{http://v8.1c.ru/8.3/MDClasses}"+type)
-	meta_table_dict[type]=[x.text for x in elements_list]
-	
 	elements_defined_list=[{'type':type,'name':x.text} for x in elements_list]
 	meta_table_list.extend(elements_defined_list)
 
