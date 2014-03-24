@@ -8,6 +8,7 @@ __author__ = 'jgoncharova'
 parametrs = {}
 meta_table_dict = {}
 meta_table_list = []
+dependencies = {}
 
 def read_meta_object(node,type):
 
@@ -100,23 +101,50 @@ def read_ini_file():
 
 	
 def	read_item_dependency(metadata_item):
+	"""
+	считывает файл с описанием объекта метаданных
+	добавляет в таблицу meta_table_list зависимые файлы с их guiduid
+	"""
+	
 	
 	file_name = parametrs['full_text_catalog']+'\\'+metadata_item['type']+'\\'+metadata_item['name']+'.xml'
-	print(file_name)
+	
+	file_tree = etree.parse(file_name)
+	dependencies[read_object_uuid(file_name)]=file_name
+	
+	#подтягиваем формы
+	if len(file_tree.getroot()[0])>2: #считывать дочерние объекты по номеру узла в дереве слишком грубо
+		children=file_tree.getroot()[0][2]
+		form_elements = children.findall('{http://v8.1c.ru/8.3/MDClasses}Form')
+		for form_element in form_elements:
+			file_name = parametrs['full_text_catalog']+'\\'+metadata_item['type']+'\\'+metadata_item['name']+'\\Form\\'+form_element.text+'.xml'
+			dependencies[read_object_uuid(file_name)]=file_name
+			
+	
+	
+def read_object_uuid(file_name):
+	file_tree = etree.parse(file_name)
+	self_uuid = file_tree.getroot()[0].attrib['uuid']
+	return self_uuid
 
 def read_dependency():
+	"""
+	считываем зависимые блоки данных (файлы) для каждого объекта конфигурации
+	"""
 	for metadata_item in meta_table_list:
 		read_item_dependency(metadata_item)
 
 def save_1c():
 	read_ini_file()
-	print(parametrs)	
+		
 	read_meta_table()
 	
-	read_item_dependency(meta_table_list[1525])
+	read_dependency()
 	
-	#read_dependency()
-	print(meta_table_list[1525])
+	
+	print (len(dependencies))
+	
+	
 	
 # основная программа
 
