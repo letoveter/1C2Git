@@ -10,7 +10,7 @@ __author__ = 'jgoncharova'
 
 parametrs = {}
 meta_table_list = []
-dependencies = {}
+uuid_dict = {}
 
 
 def read_meta_object(node, type):
@@ -80,7 +80,7 @@ def read_ini_file():
     parametrs.update(config_raw.items('main'))
 
 
-def read_item_dependency(metadata_item):
+def read_oblect_uuid(metadata_item):
     """
 	считывает файл с описанием объекта метаданных
 	добавляет в таблицу meta_table_list зависимые файлы с их guiduid
@@ -90,7 +90,7 @@ def read_item_dependency(metadata_item):
         'name'] + '.xml'
 
     file_tree = etree.parse(this_file_name)
-    dependencies[read_object_uuid(this_file_name)] = this_file_name
+    uuid_dict[get_file_uuid(this_file_name)] = this_file_name
 
     #подтягиваем формы и отчеты
     if len(file_tree.getroot()[0]) > 2:  #считывать дочерние объекты по номеру узла в дереве слишком грубо
@@ -100,49 +100,52 @@ def read_item_dependency(metadata_item):
         for form_element in form_elements:
             file_name = parametrs['full_text_catalog'] + '\\' + metadata_item['type'] + '\\' + metadata_item[
                 'name'] + '\\Form\\' + form_element.text + '.xml'
-            dependencies[read_object_uuid(file_name)] = file_name
+            uuid_dict[get_file_uuid(file_name)] = file_name
 
         template_elements = children.findall('{http://v8.1c.ru/8.3/MDClasses}Template')
         for template_element in template_elements:
             file_name = parametrs['full_text_catalog'] + '\\' + metadata_item['type'] + '\\' + metadata_item[
                 'name'] + '\\Template\\' + template_element.text + '.xml'
-            dependencies[read_object_uuid(file_name)] = file_name
+            uuid_dict[get_file_uuid(file_name)] = file_name
 
         command_elements = children.findall('{http://v8.1c.ru/8.3/MDClasses}Command')
         for command_element in command_elements:
-            dependencies[command_element.attrib['uuid']] = this_file_name + '_command'
+            uuid_dict[command_element.attrib['uuid']] = this_file_name + '_command'
         #осталось поискать вложенные папки в subsystem
 
 
-def read_object_uuid(file_name):
+def get_file_uuid(file_name):
     file_tree = etree.parse(file_name)
-    self_uuid = file_tree.getroot()[0].attrib['uuid']
-    return self_uuid
+    try:
+        self_uuid = file_tree.getroot()[0].attrib['uuid']
+        return self_uuid
+    except:
+        print('Error uuid extract from file:') #logging
 
 
-def read_dependency():
+def read_all_uuid():
 
     # считываем корень конфигурации
     conf_xml_name = parametrs['full_text_catalog'] + '\Configuration.xml'
     file_tree = etree.parse(conf_xml_name)
     self_uuid = file_tree.getroot()[0].attrib['uuid']
-    dependencies[self_uuid] = conf_xml_name
+    uuid_dict[self_uuid] = conf_xml_name
 
     # мистический блок inner info - надо с ним разобраться
     conf_inner_info = file_tree.getroot()[0][0]
     for block in conf_inner_info:
-        dependencies[block[0].text] = conf_xml_name
-        dependencies[block[1].text] = conf_xml_name
+        uuid_dict[block[0].text] = conf_xml_name
+        uuid_dict[block[1].text] = conf_xml_name
 
     # если изменены базовые блоки - перечитываем всю конфигурацию
-    dependencies['root'] = conf_xml_name
-    dependencies['version'] = conf_xml_name
-    dependencies['versions'] = conf_xml_name
+    uuid_dict['root'] = conf_xml_name
+    uuid_dict['version'] = conf_xml_name
+    uuid_dict['versions'] = conf_xml_name
 
 
     # считываем зависимые блоки данных (файлы) для каждого объекта конфигурации
     for metadata_item in meta_table_list:
-        read_item_dependency(metadata_item)
+        read_oblect_uuid(metadata_item)
 
     # а так же ищем затерявшиеся куски в недрах subsystem
     subsystems_catalog=parametrs['full_text_catalog'] + '\\Subsystem'
@@ -152,7 +155,7 @@ def read_dependency():
                 this_file_name = d + '\\' + file
                 file_tree = etree.parse(this_file_name)
                 try:
-                    dependencies[read_object_uuid(this_file_name)] = this_file_name
+                    uuid_dict[read_object_uuid(this_file_name)] = this_file_name
                 except:
                     print(this_file_name) # в логи!
 
@@ -164,7 +167,9 @@ def save_1c():
 
     read_meta_table()
 
-    read_dependency()
+    read_all_uuid()
+
+
 
     #ищем потеряшек
     unknown_uuid=[]
@@ -175,7 +180,7 @@ def save_1c():
 
     for row in cursor.fetchall():
         short_ref = row[0][:36]
-        if dependencies.get(short_ref, None) is None:
+        if uuid_dict.get(short_ref, None) is None:
             unknown_uuid.append(row[0])
     cursor.close()
     db.close()
