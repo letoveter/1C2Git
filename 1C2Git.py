@@ -4,13 +4,14 @@ import xml.etree.ElementTree as etree
 import pyodbc
 import configparser
 import os
-
+import datetime
 
 __author__ = 'jgoncharova'
 
 parametrs = {}
 meta_table_list = []
 uuid_dict = {}
+
 
 
 def read_meta_object(node, type):
@@ -113,6 +114,13 @@ def read_oblect_uuid(metadata_item):
             uuid_dict[command_element.attrib['uuid']] = this_file_name + '_command'
         #осталось поискать вложенные папки в subsystem
 
+    # заполняем таблицу зависимостей
+    dep_list=[]
+    root = file_tree.getroot()
+    for attribute_node in root.findall('.//{http://v8.1c.ru/8.1/data/core}Type'):
+        if attribute_node.text[:3]=='cfg':
+           dep_list.append(attribute_node.text[4:].replace('ref',''))
+    metadata_item['dependencies']=dep_list
 
 def get_file_uuid(file_name):
     file_tree = etree.parse(file_name)
@@ -155,7 +163,7 @@ def read_all_uuid():
             if  d[-9:]=='Subsystem' and d!=subsystems_catalog:
                 this_file_name = d + '\\' + file
                 file_tree = etree.parse(this_file_name)
-                try: 
+                try:
                     uuid_dict[get_file_uuid(this_file_name)] = this_file_name
                 except:
                     print(this_file_name) # в логи!
@@ -177,11 +185,13 @@ def check_uuid_table():
             unknown_uuid.append(row[0])
     cursor.close()
     db.close()
-    print(unknown_uuid)
+
     assert len(unknown_uuid)==0
 
 
 def save_1c():
+
+    begin_time = datetime.datetime.now()
 
     read_ini_file()
 
@@ -190,6 +200,12 @@ def save_1c():
     read_all_uuid()
 
     check_uuid_table()
+
+    print(meta_table_list[100])
+
+    end_time = datetime.datetime.now()
+    delta = end_time - begin_time
+    print('время выполнения сценария - ',delta)
 
 
 if __name__ == '__main__':
