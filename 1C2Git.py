@@ -120,7 +120,8 @@ def get_file_uuid(file_name):
         self_uuid = file_tree.getroot()[0].attrib['uuid']
         return self_uuid
     except:
-        print('Error uuid extract from file:') #logging
+        print('Error uuid extract from file:',file_name) #logging
+        return None
 
 
 def read_all_uuid():
