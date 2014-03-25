@@ -121,9 +121,26 @@ def read_object_uuid(file_name):
 
 
 def read_dependency():
-    """
-	считываем зависимые блоки данных (файлы) для каждого объекта конфигурации
-	"""
+
+    # считываем корень конфигурации
+    conf_xml_name = parametrs['full_text_catalog'] + '\Configuration.xml'
+    file_tree = etree.parse(conf_xml_name)
+    self_uuid = file_tree.getroot()[0].attrib['uuid']
+    dependencies[self_uuid] = conf_xml_name
+
+    # мистический блок inner info - надо с ним разобраться
+    conf_inner_info = file_tree.getroot()[0][0]
+    for block in conf_inner_info:
+        dependencies[block[0].text] = conf_xml_name
+        dependencies[block[1].text] = conf_xml_name
+
+    # если изменены базовые блоки - перечитываем всю конфигурацию
+    dependencies['root'] = conf_xml_name
+    dependencies['version'] = conf_xml_name
+    dependencies['versions'] = conf_xml_name
+
+
+    # считываем зависимые блоки данных (файлы) для каждого объекта конфигурации
     for metadata_item in meta_table_list:
         read_item_dependency(metadata_item)
 
@@ -137,7 +154,7 @@ def read_dependency():
                 try:
                     dependencies[read_object_uuid(this_file_name)] = this_file_name
                 except:
-                    print(this_file_name)
+                    print(this_file_name) # в логи!
 
 
 
@@ -154,7 +171,7 @@ def save_1c():
     connect_string = 'DRIVER={{SQL Server}};SERVER={0};DATABASE={1};UID={2};PWD={3}'.format(parametrs['server_name'],parametrs['dev_database'],parametrs['dev_login'],parametrs['dev_pass'])
     db = pyodbc.connect(connect_string)
     cursor = db.cursor()
-    cursor.execute('''SELECT FileName FROM Config''')
+    cursor.execute('SELECT FileName FROM Config') #2 ConfigSave!!
 
     for row in cursor.fetchall():
         short_ref = row[0][:36]
