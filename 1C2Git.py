@@ -155,11 +155,30 @@ def read_all_uuid():
             if  d[-9:]=='Subsystem' and d!=subsystems_catalog:
                 this_file_name = d + '\\' + file
                 file_tree = etree.parse(this_file_name)
-                try:
-                    uuid_dict[read_object_uuid(this_file_name)] = this_file_name
+                try: 
+                    uuid_dict[get_file_uuid(this_file_name)] = this_file_name
                 except:
                     print(this_file_name) # в логи!
 
+
+def check_uuid_table():
+    #ищем потерянные uuid по базе данных
+    unknown_uuid = []
+    connect_string = 'DRIVER={{SQL Server}};SERVER={0};DATABASE={1};UID={2};PWD={3}'.format(parametrs['server_name'],
+                                                                                            parametrs['dev_database'],
+                                                                                            parametrs['dev_login'],
+                                                                                            parametrs['dev_pass'])
+    db = pyodbc.connect(connect_string)
+    cursor = db.cursor()
+    cursor.execute('SELECT FileName FROM Config')  #2 ConfigSave!!
+    for row in cursor.fetchall():
+        short_ref = row[0][:36]
+        if uuid_dict.get(short_ref, None) is None:
+            unknown_uuid.append(row[0])
+    cursor.close()
+    db.close()
+    print(unknown_uuid)
+    assert len(unknown_uuid)==0
 
 
 def save_1c():
@@ -170,24 +189,7 @@ def save_1c():
 
     read_all_uuid()
 
-
-
-    #ищем потеряшек
-    unknown_uuid=[]
-    connect_string = 'DRIVER={{SQL Server}};SERVER={0};DATABASE={1};UID={2};PWD={3}'.format(parametrs['server_name'],parametrs['dev_database'],parametrs['dev_login'],parametrs['dev_pass'])
-    db = pyodbc.connect(connect_string)
-    cursor = db.cursor()
-    cursor.execute('SELECT FileName FROM Config') #2 ConfigSave!!
-
-    for row in cursor.fetchall():
-        short_ref = row[0][:36]
-        if uuid_dict.get(short_ref, None) is None:
-            unknown_uuid.append(row[0])
-    cursor.close()
-    db.close()
-
-    print(unknown_uuid)
-    print(len(unknown_uuid))
+    check_uuid_table()
 
 
 if __name__ == '__main__':
