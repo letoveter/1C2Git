@@ -3,6 +3,7 @@ import sys
 import xml.etree.ElementTree as etree
 import pyodbc
 import configparser
+import os
 
 
 __author__ = 'jgoncharova'
@@ -72,6 +73,7 @@ def read_ini_file():
     """
 	считываем файл с настройками
 	файл должен называться 1C2Git.cfg и лежать рядом со сценарием 1C2Git.py
+	1C2Git.cfg не коммитится!!
 	"""
     config_raw = configparser.ConfigParser()
     config_raw.read('1C2Git.cfg')
@@ -125,18 +127,30 @@ def read_dependency():
     for metadata_item in meta_table_list:
         read_item_dependency(metadata_item)
 
+    # а так же ищем затерявшиеся куски в недрах subsystem
+    subsystems_catalog=parametrs['full_text_catalog'] + '\\Subsystem'
+    for d, dirs, files in os.walk(subsystems_catalog):
+        for file in files:
+            if  d[-9:]=='Subsystem' and d!=subsystems_catalog:
+                this_file_name = d + '\\' + file
+                file_tree = etree.parse(this_file_name)
+                try:
+                    dependencies[read_object_uuid(this_file_name)] = this_file_name
+                except:
+                    print(this_file_name)
+
+
 
 def save_1c():
+
     read_ini_file()
-    print(parametrs)
 
-    #read_meta_table()
+    read_meta_table()
 
-    #read_dependency()
-
-    print(len(dependencies))
+    read_dependency()
 
     #ищем потеряшек
+    unknown_uuid=[]
     connect_string = 'DRIVER={{SQL Server}};SERVER={0};DATABASE={1};UID={2};PWD={3}'.format(parametrs['server_name'],parametrs['dev_database'],parametrs['dev_login'],parametrs['dev_pass'])
     db = pyodbc.connect(connect_string)
     cursor = db.cursor()
@@ -145,9 +159,12 @@ def save_1c():
     for row in cursor.fetchall():
         short_ref = row[0][:36]
         if dependencies.get(short_ref, None) is None:
-            print(row[0])
+            unknown_uuid.append(row[0])
     cursor.close()
     db.close()
+
+    print(unknown_uuid)
+    print(len(unknown_uuid))
 
 
 if __name__ == '__main__':
