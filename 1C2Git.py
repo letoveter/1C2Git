@@ -78,7 +78,8 @@ def read_ini_file():
 	"""
     config_raw = configparser.ConfigParser()
     config_raw.read('1C2Git.cfg')
-    parametrs.update(config_raw.items('main'))
+    parametrs.update(config_raw.items('folders'))
+    parametrs.update(config_raw.items('databases'))
 
 
 def read_oblect_uuid(metadata_item):
@@ -174,8 +175,8 @@ def check_uuid_table():
     unknown_uuid = []
     connect_string = 'DRIVER={{SQL Server}};SERVER={0};DATABASE={1};UID={2};PWD={3}'.format(parametrs['server_name'],
                                                                                             parametrs['dev_database'],
-                                                                                            parametrs['dev_login'],
-                                                                                            parametrs['dev_pass'])
+                                                                                            parametrs['sql_login'],
+                                                                                            parametrs['sql_pass'])
     db = pyodbc.connect(connect_string)
     cursor = db.cursor()
     cursor.execute('SELECT FileName FROM Config')  #2 ConfigSave!!
@@ -187,6 +188,14 @@ def check_uuid_table():
     db.close()
 
     assert len(unknown_uuid)==0
+
+def full_export():
+  # полностью копируем таблицу configsave в тень
+  # запускаем 1с с командой “Выгрузить файлы”
+  # разбираем выгруженные файлы по папкам
+  # обновляем таблицу соответствий метаданных
+  #обновляем папку стабов
+  pass
 
 
 def save_1c():
@@ -209,11 +218,13 @@ def save_1c():
 
 
 if __name__ == '__main__':
-    #Operation = sys.argv[1]
+    #operation = sys.argv[1]
 
-    #if Operation == '-s':
+    #if operation == '-s':
     save_1c()
 
+    #elif operation=='-sa':
+    #full_export()
 
 
 
