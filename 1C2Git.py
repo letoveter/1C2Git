@@ -80,6 +80,7 @@ def read_ini_file():
     config_raw.read('1C2Git.cfg')
     parametrs.update(config_raw.items('folders'))
     parametrs.update(config_raw.items('databases'))
+    parametrs.update(config_raw.items('1c_data'))
 
 
 def read_oblect_uuid(metadata_item):
@@ -189,13 +190,49 @@ def check_uuid_table():
 
     assert len(unknown_uuid)==0
 
+def tell2git_im_busy(message):
+
+    mark_filename=os.path.join(parametrs['git_work_catalog'],'1C2Git_export_status.txt')
+    mark_file=open(mark_filename,'w',-1,'UTF-8')
+
+    mark_file.write('Идет выгрузка из 1С в Git, время начала - '+datetime.datetime.now().strftime("%d.%m.%Y %I:%M %p")+'\n')
+
+    if type(message)==str:
+       mark_file.write(message)
+
+    elif type(message)==list:
+        mark_file.write('Состав объектов для выгрузки:')
+        for m_obj in message:
+            mark_file.write(m_obj)
+
+    mark_file.close()
+
+
+def tell2git_im_free():
+    mark_filename=os.path.join(parametrs['git_work_catalog'],'1C2Git_export_status.txt')
+    os.remove(mark_filename)
+
 def full_export():
-  # полностью копируем таблицу configsave в тень
-  # запускаем 1с с командой “Выгрузить файлы”
-  # разбираем выгруженные файлы по папкам
-  # обновляем таблицу соответствий метаданных
-  #обновляем папку стабов
-  pass
+
+    read_ini_file()
+
+    tell2git_im_busy('проводится полная выгрузка конфигурации')
+    #пишем в папку git  файл 'я работаю'
+    # полностью копируем таблицу configsave в тень
+    # запускаем 1с с командой “Выгрузить файлы”
+
+    '''os.system(parametrs['1c_starter']
+            +' DESIGNER /S'+parametrs['1c_server']+'\\'+parametrs['1c_dev_base']
+            +' /N'+parametrs['1c_dev_login']+' /P'+parametrs['1c_dev_pass']
+            +'/DumpConfigToFiles '+parametrs['full_text_catalog']) #мб work_catalog?'''
+
+    # разбираем выгруженные файлы по папкам
+    #all_dots_to_folders(parametrs['full_text_catalog'],parametrs['git_work_catalog'])
+    # обновляем таблицу соответствий метаданных
+    #обновляем папку стабов
+
+    tell2git_im_free()
+
 
 
 def save_1c():
@@ -221,10 +258,10 @@ if __name__ == '__main__':
     #operation = sys.argv[1]
 
     #if operation == '-s':
-    save_1c()
+    #save_1c()
 
     #elif operation=='-sa':
-    #full_export()
+    full_export()
 
 
 
