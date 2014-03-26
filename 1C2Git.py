@@ -209,10 +209,14 @@ def tell2git_im_busy(message):
 
 
 def tell2git_im_free():
+
     mark_filename=os.path.join(parametrs['git_work_catalog'],'1C2Git_export_status.txt')
     os.remove(mark_filename)
 
+
 def full_export():
+
+    begin_time = datetime.datetime.now()
 
     read_ini_file()
 
@@ -221,18 +225,22 @@ def full_export():
     # полностью копируем таблицу configsave в тень
     # запускаем 1с с командой “Выгрузить файлы”
 
-    '''os.system(parametrs['1c_starter']
-            +' DESIGNER /S'+parametrs['1c_server']+'\\'+parametrs['1c_dev_base']
-            +' /N'+parametrs['1c_dev_login']+' /P'+parametrs['1c_dev_pass']
-            +'/DumpConfigToFiles '+parametrs['full_text_catalog']) #мб work_catalog?'''
+    os.system(parametrs['1c_starter']
+            +' DESIGNER /S'+parametrs['1c_server']+'\\'+parametrs['1c_shad_base']
+            +' /N'+parametrs['1c_shad_login']+' /P'+parametrs['1c_shad_pass']
+            +' /DumpConfigToFiles '+parametrs['full_text_catalog'])
 
     # разбираем выгруженные файлы по папкам
+    
     #all_dots_to_folders(parametrs['full_text_catalog'],parametrs['git_work_catalog'])
     # обновляем таблицу соответствий метаданных
     #обновляем папку стабов
 
     tell2git_im_free()
 
+    end_time = datetime.datetime.now()
+    delta = end_time - begin_time
+    print('время выполнения сценария - ',delta)
 
 
 def save_1c():
@@ -247,7 +255,6 @@ def save_1c():
 
     check_uuid_table()
 
-    print(meta_table_list[100])
 
     end_time = datetime.datetime.now()
     delta = end_time - begin_time
