@@ -5,6 +5,10 @@ import pyodbc
 import configparser
 import os
 import datetime
+import glob
+import shutil
+import filecmp
+import hashlib
 
 __author__ = 'jgoncharova'
 
@@ -78,9 +82,9 @@ def read_ini_file():
 	"""
     config_raw = configparser.ConfigParser()
     config_raw.read('1C2Git.cfg')
-    parametrs.update(config_raw.items('folders'))
-    parametrs.update(config_raw.items('databases'))
-    parametrs.update(config_raw.items('1c_data'))
+    for section in config_raw.sections():
+        parametrs.update(config_raw.items(section))
+
 
 
 def read_oblect_uuid(metadata_item):
@@ -193,19 +197,20 @@ def check_uuid_table():
 def tell2git_im_busy(message):
 
     mark_filename=os.path.join(parametrs['git_work_catalog'],'1C2Git_export_status.txt')
-    mark_file=open(mark_filename,'w',-1,'UTF-8')
 
-    mark_file.write('Идет выгрузка из 1С в Git, время начала - '+datetime.datetime.now().strftime("%d.%m.%Y %I:%M %p")+'\n')
+    with open(mark_filename,'w',-1,'UTF-8') as mark_file:
+        mark_file.write('Идет выгрузка из 1С в Git, время начала - '+datetime.datetime.now().strftime("%d.%m.%Y %I:%M %p")+'\n')
 
-    if type(message)==str:
-       mark_file.write(message)
+        if type(message)==str:
+           mark_file.write(message)
 
-    elif type(message)==list:
-        mark_file.write('Состав объектов для выгрузки:')
-        for m_obj in message:
-            mark_file.write(m_obj)
+        elif type(message)==list:
+            mark_file.write('Состав объектов для выгрузки:')
+            for m_obj in message:
+                mark_file.write(m_obj)
+        else:
+             raise Exception("Неверный тип message")
 
-    mark_file.close()
 
 
 def tell2git_im_free():
@@ -213,6 +218,47 @@ def tell2git_im_free():
     mark_filename=os.path.join(parametrs['git_work_catalog'],'1C2Git_export_status.txt')
     os.remove(mark_filename)
 
+def dots2folders(source_catalog,destination_catalog):
+    """копирует файлы из source_catalog в destination_catalog
+     параллельно разбивая их по папкам, так что
+     C:\1C2Git_files\full_text\ChartOfCalculationTypes.Удержания.Form.ФормаСписка.Form.Module.txt
+     превращается в C:\Buh_korp\ChartOfCalculationTypes\Удержания\Form\ФормаСписка\Form\Module.txt"""
+
+    all_dot_files=glob.glob(source_catalog+'\\*.*')
+
+    for dot_file in all_dot_files:
+        file_parts_list = os.path.basename(dot_file).split('.')
+        left_part_of_file='\\'.join(file_parts_list[:-2])
+        right_part_of_file = '.'.join(file_parts_list[-2:])
+        new_catalog=os.path.join(destination_catalog,left_part_of_file)
+        full_new_name = os.path.join(new_catalog,right_part_of_file)
+
+        #соединим вместе новое место назначения и левую часть названия файла, оставив только последнее имя и расширение
+        if not os.path.exists(new_catalog):
+            os.makedirs(new_catalog)
+
+        # а если нет параметра?
+        if parametrs['how_to_copy']=='dummy':
+            shutil.copy(dot_file,full_new_name)
+        elif parametrs['how_to_copy']=='cmp':
+            if not os.path.exists(full_new_name) or not filecmp.cmp(dot_file,full_new_name):
+                shutil.copy(dot_file,full_new_name)
+                print('копируем '+dot_file)
+        elif parametrs['how_to_copy']=='hash':
+            if not os.path.exists(full_new_name):
+                shutil.copy(dot_file,full_new_name)
+            else:
+                with open(dot_file, 'rb') as f:
+                    file1_hash = hashlib.sha1(f.read()).hexdigest()
+                #with open(full_new_name, 'rb') as f:
+                    #file2_hash = hashlib.sha1(f.read()).hexdigest()
+                #if not file1_hash == file2_hash:
+                    # shutil.copy(dot_file,full_new_name)
+           #file_hash = hashlib.sha1(open(dot_file,'r',-1,'UTF-8').read().decode('UTF-8')).hexdigest()
+            #if not os.path.exists(full_new_name) or not filecmp.cmp(dot_file,full_new_name):
+
+        else:
+            raise Exception("не заполнена настройка how_to_copy")
 
 def full_export():
 
@@ -220,19 +266,23 @@ def full_export():
 
     read_ini_file()
 
-    tell2git_im_busy('проводится полная выгрузка конфигурации')
     #пишем в папку git  файл 'я работаю'
-    # полностью копируем таблицу configsave в тень
-    # запускаем 1с с командой “Выгрузить файлы”
+    tell2git_im_busy('проводится полная выгрузка конфигурации')
 
+
+    # полностью копируем таблицу configsave в тень
+
+
+    # запускаем 1с с командой “Выгрузить файлы”
+    '''
     os.system(parametrs['1c_starter']
             +' DESIGNER /S'+parametrs['1c_server']+'\\'+parametrs['1c_shad_base']
             +' /N'+parametrs['1c_shad_login']+' /P'+parametrs['1c_shad_pass']
-            +' /DumpConfigToFiles '+parametrs['full_text_catalog'])
+            +' /DumpConfigToFiles '+parametrs['full_text_catalog'])'''
 
     # разбираем выгруженные файлы по папкам
-    
-    #all_dots_to_folders(parametrs['full_text_catalog'],parametrs['git_work_catalog'])
+    dots2folders(parametrs['full_text_catalog'],parametrs['empty_text_catalog'])
+
     # обновляем таблицу соответствий метаданных
     #обновляем папку стабов
 
@@ -253,7 +303,7 @@ def save_1c():
 
     read_all_uuid()
 
-    check_uuid_table()
+    #check_uuid_table()
 
 
     end_time = datetime.datetime.now()
