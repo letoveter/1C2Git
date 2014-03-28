@@ -260,6 +260,37 @@ def dots2folders(source_catalog,destination_catalog):
         else:
             raise Exception("не заполнена настройка how_to_copy")
 
+
+
+def fill_dummy_catalog():
+    import re
+
+    for meta_object in meta_table_list:
+
+        object_file_name = parametrs['full_text_catalog'] \
+                           + '\\' + meta_object['type'] \
+                           + '.' + meta_object['name'] + '.xml'
+
+        object_new_file_name = parametrs['dummy_text_catalog'] \
+                           + '\\' + meta_object['type'] \
+                           + '.' + meta_object['name'] + '.xml'
+                            # не работает
+
+        if not os.path.exists(object_new_file_name):
+
+            file_str=open(object_file_name,'r',-1,'UTF-8').read()
+            unwanted_nodes = ['ChildObjects','DefaultObjectForm','DefaultListForm','DefaultChoiceForm','RegisterRecords','Characteristics']
+            string_was_changed = False
+            for unwanted_node in unwanted_nodes:
+                find_res = re.search('<'+unwanted_node+'>.*</'+unwanted_node+'>',file_str,re.DOTALL)  # заменить грамотной записью xml!!
+                if not find_res is None:
+                    file_str = file_str.replace(find_res.group(),'<'+unwanted_node+'/>')
+                    string_was_changed = True
+
+            if string_was_changed:
+                data_file=open(object_new_file_name,'w',-1,'UTF-8')
+                data_file.write(file_str)
+
 def full_export():
 
     begin_time = datetime.datetime.now()
@@ -274,24 +305,26 @@ def full_export():
 
 
     # запускаем 1с с командой “Выгрузить файлы”
-    '''
+
     os.system(parametrs['1c_starter']
             +' DESIGNER /S'+parametrs['1c_server']+'\\'+parametrs['1c_shad_base']
             +' /N'+parametrs['1c_shad_login']+' /P'+parametrs['1c_shad_pass']
-            +' /DumpConfigToFiles '+parametrs['full_text_catalog'])'''
+            +' /DumpConfigToFiles '+parametrs['full_text_catalog'])
 
     # разбираем выгруженные файлы по папкам
-    dots2folders(parametrs['full_text_catalog'],parametrs['empty_text_catalog'])
+    dots2folders(parametrs['full_text_catalog'],parametrs['git_work_catalog'])
 
     # обновляем таблицу соответствий метаданных
+    read_meta_table()
+
     #обновляем папку стабов
+    fill_dummy_catalog()
 
     tell2git_im_free()
 
     end_time = datetime.datetime.now()
     delta = end_time - begin_time
     print('время выполнения сценария - ',delta)
-
 
 def save_1c():
 
@@ -301,9 +334,11 @@ def save_1c():
 
     read_meta_table()
 
-    read_all_uuid()
+    #read_all_uuid()
 
     #check_uuid_table()
+
+    fill_dummy_catalog()
 
 
     end_time = datetime.datetime.now()
