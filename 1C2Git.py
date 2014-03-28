@@ -87,38 +87,37 @@ def read_ini_file():
 
 
 
-def read_oblect_uuid(metadata_item):
+def read_oblect_uuid_and_dependencies(metadata_item):
     """
 	считывает файл с описанием объекта метаданных
 	добавляет в таблицу meta_table_list зависимые файлы с их guiduid
 	"""
 
-    this_file_name = parametrs['full_text_catalog'] + '\\' + metadata_item['type'] + '\\' + metadata_item[
+    this_file_name = parametrs['full_text_catalog'] + '\\' + metadata_item['type'] + '.' + metadata_item[
         'name'] + '.xml'
 
     file_tree = etree.parse(this_file_name)
     uuid_dict[get_file_uuid(this_file_name)] = this_file_name
 
     #подтягиваем формы и отчеты
-    if len(file_tree.getroot()[0]) > 2:  #считывать дочерние объекты по номеру узла в дереве слишком грубо
+    if len(file_tree.getroot()[0]) > 2:  #TODO: оформить через XPath
         children = file_tree.getroot()[0][2]
 
         form_elements = children.findall('{http://v8.1c.ru/8.3/MDClasses}Form')
         for form_element in form_elements:
-            file_name = parametrs['full_text_catalog'] + '\\' + metadata_item['type'] + '\\' + metadata_item[
-                'name'] + '\\Form\\' + form_element.text + '.xml'
+            file_name = parametrs['full_text_catalog'] + '\\' + metadata_item['type'] + '.' + metadata_item[
+                'name'] + '.Form.' + form_element.text + '.xml'
             uuid_dict[get_file_uuid(file_name)] = file_name
 
         template_elements = children.findall('{http://v8.1c.ru/8.3/MDClasses}Template')
         for template_element in template_elements:
-            file_name = parametrs['full_text_catalog'] + '\\' + metadata_item['type'] + '\\' + metadata_item[
-                'name'] + '\\Template\\' + template_element.text + '.xml'
+            file_name = parametrs['full_text_catalog'] + '\\' + metadata_item['type'] + '.' + metadata_item[
+                'name'] + '.Template.' + template_element.text + '.xml'
             uuid_dict[get_file_uuid(file_name)] = file_name
 
         command_elements = children.findall('{http://v8.1c.ru/8.3/MDClasses}Command')
         for command_element in command_elements:
             uuid_dict[command_element.attrib['uuid']] = this_file_name + '_command'
-        #осталось поискать вложенные папки в subsystem
 
     # заполняем таблицу зависимостей
     dep_list=[]
@@ -134,7 +133,7 @@ def get_file_uuid(file_name):
         self_uuid = file_tree.getroot()[0].attrib['uuid']
         return self_uuid
     except:
-        print('Error uuid extract from file:',file_name) #logging
+        #print('Error uuid extract from file:',file_name) #logging
         return None
 
 
@@ -146,7 +145,7 @@ def read_all_uuid():
     self_uuid = file_tree.getroot()[0].attrib['uuid']
     uuid_dict[self_uuid] = conf_xml_name
 
-    # мистический блок inner info - надо с ним разобраться
+    #TODO: мистический блок inner info - надо с ним разобраться
     conf_inner_info = file_tree.getroot()[0][0]
     for block in conf_inner_info:
         uuid_dict[block[0].text] = conf_xml_name
@@ -160,19 +159,23 @@ def read_all_uuid():
 
     # считываем зависимые блоки данных (файлы) для каждого объекта конфигурации
     for metadata_item in meta_table_list:
-        read_oblect_uuid(metadata_item)
+        read_oblect_uuid_and_dependencies(metadata_item)
 
     # а так же ищем затерявшиеся куски в недрах subsystem
-    subsystems_catalog=parametrs['full_text_catalog'] + '\\Subsystem'
-    for d, dirs, files in os.walk(subsystems_catalog):
-        for file in files:
-            if  d[-9:]=='Subsystem' and d!=subsystems_catalog:
-                this_file_name = d + '\\' + file
-                file_tree = etree.parse(this_file_name)
-                try:
-                    uuid_dict[get_file_uuid(this_file_name)] = this_file_name
-                except:
-                    print(this_file_name) # в логи!
+    all_subsystem_files = glob.glob(parametrs['full_text_catalog']+'\\Subsystem.*.xml')
+
+    for one_subsystem_file in all_subsystem_files:
+        # В названии файла есть слово Subsystem не только в начале
+        #Todo: попадает много ненужных файлов типа Help.xml, CommandInterface.xml
+        if os.path.basename(one_subsystem_file)[9:].find('Subsystem')>0:
+            file_tree = etree.parse(one_subsystem_file)
+            try:
+                uuid_dict[get_file_uuid(one_subsystem_file)] = one_subsystem_file
+            except:
+                #print(this_file_name) #TODO: в логи!'''
+                pass
+
+
 
 
 def check_uuid_table():
@@ -184,7 +187,7 @@ def check_uuid_table():
                                                                                             parametrs['sql_pass'])
     db = pyodbc.connect(connect_string)
     cursor = db.cursor()
-    cursor.execute('SELECT FileName FROM Config')  #2 ConfigSave!!
+    cursor.execute('SELECT FileName FROM Config')
     for row in cursor.fetchall():
         short_ref = row[0][:36]
         if uuid_dict.get(short_ref, None) is None:
@@ -192,7 +195,7 @@ def check_uuid_table():
     cursor.close()
     db.close()
 
-    assert len(unknown_uuid)==0
+    assert len(unknown_uuid)==0,'total-'+repr(len(unknown_uuid))+', first 10-'+repr(unknown_uuid[:10])
 
 def tell2git_im_busy(message):
 
@@ -282,7 +285,7 @@ def fill_dummy_catalog():
             unwanted_nodes = ['ChildObjects','DefaultObjectForm','DefaultListForm','DefaultChoiceForm','RegisterRecords','Characteristics']
             string_was_changed = False
             for unwanted_node in unwanted_nodes:
-                find_res = re.search('<'+unwanted_node+'>.*</'+unwanted_node+'>',file_str,re.DOTALL)  # заменить грамотной записью xml!!
+                find_res = re.search('<'+unwanted_node+'>.*</'+unwanted_node+'>',file_str,re.DOTALL)  #TODO: заменить грамотной записью xml!!
                 if not find_res is None:
                     file_str = file_str.replace(find_res.group(),'<'+unwanted_node+'/>')
                     string_was_changed = True
@@ -290,6 +293,51 @@ def fill_dummy_catalog():
             if string_was_changed:
                 data_file=open(object_new_file_name,'w',-1,'UTF-8')
                 data_file.write(file_str)
+
+def connect2db():
+
+    connect_string = 'DRIVER={{SQL Server}};SERVER={0};DATABASE={1};UID={2};PWD={3}'.format(parametrs['server_name'],
+                                                                                            parametrs['dev_database'],
+                                                                                            parametrs['sql_login'],
+                                                                                            parametrs['sql_pass'])
+
+    return pyodbc.connect(connect_string)
+
+
+
+
+def get_changed_blocks():
+    '''
+    получает из запроса к 2-м базам перечень измененных блоков
+    '''
+    res=[]
+    db = connect2db()
+    cursor = db.cursor()
+    try:
+        query_text = '''SELECT dev.FileName
+        FROM ['''+parametrs['1c_dev_base']+'''].[dbo].[Config] as dev
+        LEFT JOIN  ['''+parametrs['1c_shad_base']+'''].[dbo].[Config] as shad
+        ON dev.FileName = shad.FileName
+        WHERE dev.Modified <> shad.Modified
+        OR shad.Modified IS NULL'''
+        cursor.execute(query_text)
+        res = cursor.fetchall()
+
+    except:
+        print('Error get_changed_blocks: ',query_text) #TODO(me):logging
+    finally:
+        db.close()
+
+    modified_objects=[]
+    not_found_objects = []
+    for i in res:
+        object_name=uuid_dict.get(i[0],uuid_dict.get(i[0][:36],None))
+        if object_name is  None:
+            not_found_objects.append(i[0])
+        else:
+            if not object_name in modified_objects:
+                modified_objects.append(object_name)
+
 
 def full_export():
 
@@ -302,6 +350,15 @@ def full_export():
 
 
     # полностью копируем таблицу configsave в тень
+    db = connect2db()
+    cursor = db.cursor()
+    cursor.execute('DROP TABLE ['+parametrs['1c_shad_base']+'].[dbo].[Config]')
+    query_text = '''SELECT * INTO ['''+parametrs['1c_shad_base']+'''].[dbo].[Config]
+    FROM  ['''+parametrs['1c_dev_base']+'''].[dbo].[Config] '''
+    cursor.execute(query_text)
+
+    db.close()
+
 
 
     # запускаем 1с с командой “Выгрузить файлы”
@@ -345,6 +402,22 @@ def save_1c():
     delta = end_time - begin_time
     print('время выполнения сценария - ',delta)
 
+def prepare():
+    begin_time = datetime.datetime.now()
+
+    read_ini_file()
+
+    read_meta_table()
+
+    read_all_uuid()
+
+    check_uuid_table()
+
+    get_changed_blocks()
+
+    end_time = datetime.datetime.now()
+    delta = end_time - begin_time
+    print('время выполнения сценария - ',delta)
 
 if __name__ == '__main__':
     #operation = sys.argv[1]
@@ -353,8 +426,9 @@ if __name__ == '__main__':
     #save_1c()
 
     #elif operation=='-sa':
-    full_export()
+    #full_export()
 
+    prepare()
 
 
 
