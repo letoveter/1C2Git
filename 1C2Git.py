@@ -10,6 +10,9 @@ import shutil
 import filecmp
 import hashlib
 import pickle
+import shutil
+import re
+import logging
 
 __author__ = 'jgoncharova'
 
@@ -74,8 +77,7 @@ def read_meta_table():
     read_meta_object(children_objects, 'AccountingRegister')
     read_meta_object(children_objects, 'ChartOfCalculationTypes')
 
-    with open('meta_table_list.dat', 'wb') as dump_file:
-        pickle.dump(meta_table_list,dump_file)
+    logging.debug('Прочитано объектов '+str(len(meta_table_list)))
 
 def read_ini_file():
     """
@@ -89,6 +91,14 @@ def read_ini_file():
         parametrs.update(config_raw.items(section))
 
 
+    logging.debug('Считано '+repr(len(parametrs))+' параметров настроек')
+
+def get_param(param_name):
+    param_value=parametrs.get(param_name,None)
+    if param_value is None:
+        raise 'Не найден в конфигурации параметр '+param_name
+
+    return param_value
 
 def read_oblect_uuid_and_dependencies(metadata_item):
     """
@@ -136,7 +146,7 @@ def get_file_uuid(file_name):
         self_uuid = file_tree.getroot()[0].attrib['uuid']
         return self_uuid
     except:
-        #print('Error uuid extract from file:',file_name) #logging
+        logging.error('Error uuid extract from file:'+repr(file_name))
         return None
 
 
@@ -149,6 +159,7 @@ def read_all_uuid():
     uuid_dict[self_uuid] = conf_xml_name
 
     #TODO: мистический блок inner info - надо с ним разобраться
+    logging.debug('добавляем uuid из inner info ')
     conf_inner_info = file_tree.getroot()[0][0]
     for block in conf_inner_info:
         uuid_dict[block[0].text] = conf_xml_name
@@ -169,19 +180,18 @@ def read_all_uuid():
 
     for one_subsystem_file in all_subsystem_files:
         # В названии файла есть слово Subsystem не только в начале
-        #Todo: попадает много ненужных файлов типа Help.xml, CommandInterface.xml
+
+        if one_subsystem_file[-8:]=='Help.xml' or one_subsystem_file[-20:]=='CommandInterface.xml':
+            continue
+
         if os.path.basename(one_subsystem_file)[9:].find('Subsystem')>0:
             file_tree = etree.parse(one_subsystem_file)
             try:
                 uuid_dict[get_file_uuid(one_subsystem_file)] = one_subsystem_file
             except:
-                #print(this_file_name) #TODO: в логи!'''
-                pass
+                logging.error('Не найден в get_file_uuid файл '+repr(one_subsystem_file))
 
-    with open('uuid_dict.dat','wb') as dump_file:
-        pickle.dump(uuid_dict, dump_file)
-
-
+    logging.debug('размер uuid_dict-'+str(len(uuid_dict)))
 
 
 def check_uuid_table():
@@ -202,6 +212,12 @@ def check_uuid_table():
     db.close()
 
     assert len(unknown_uuid)==0,'total-'+repr(len(unknown_uuid))+', first 10-'+repr(unknown_uuid[:10])
+
+    with open('uuid_dict.dat','wb') as dump_file:
+        pickle.dump(uuid_dict, dump_file)
+
+    with open('meta_table_list.dat', 'wb') as dump_file:
+        pickle.dump(meta_table_list,dump_file)
 
 def tell2git_im_busy(message):
 
@@ -227,7 +243,7 @@ def tell2git_im_free():
     mark_filename=os.path.join(parametrs['git_work_catalog'],'1C2Git_export_status.txt')
     os.remove(mark_filename)
 
-def dots2folders(source_catalog,destination_catalog,files_list):
+def dots2folders(source_catalog,destination_catalog,files_list=None):
     """
     копирует файлы из source_catalog в destination_catalog
     параллельно разбивая их по папкам, так что
@@ -254,7 +270,7 @@ def dots2folders(source_catalog,destination_catalog,files_list):
         elif parametrs['how_to_copy']=='cmp':
             if not os.path.exists(full_new_name) or not filecmp.cmp(dot_file,full_new_name):
                 shutil.copy(dot_file,full_new_name)
-                #print('копируем '+dot_file)
+                logging.debug('Копируем из '+dot_file+' в '+full_new_name)
         elif parametrs['how_to_copy']=='hash':
             if not os.path.exists(full_new_name):
                 shutil.copy(dot_file,full_new_name)
@@ -274,7 +290,6 @@ def dots2folders(source_catalog,destination_catalog,files_list):
 
 
 def fill_dummy_catalog():
-    import re
 
     for meta_object in meta_table_list:
 
@@ -290,7 +305,14 @@ def fill_dummy_catalog():
         if not os.path.exists(object_new_file_name):
 
             file_str=open(object_file_name,'r',-1,'UTF-8').read()
-            unwanted_nodes = ['ChildObjects','DefaultObjectForm','DefaultListForm','DefaultChoiceForm','RegisterRecords','Characteristics']
+            unwanted_nodes = ['ChildObjects',
+                              'DefaultObjectForm',
+                              'DefaultListForm',
+                              'DefaultChoiceForm',
+                              'DefaultFolderForm',
+                              'DefaultFolderChoiceForm',
+                              'RegisterRecords',
+                              'Characteristics']
             string_was_changed = False
             for unwanted_node in unwanted_nodes:
                 find_res = re.search('<'+unwanted_node+'>.*</'+unwanted_node+'>',file_str,re.DOTALL)  #TODO: заменить грамотной записью xml!!
@@ -318,6 +340,7 @@ def get_changed_blocks():
     '''
     получает из запроса к 2-м базам перечень измененных блоков
     '''
+    logging.debug('========get_changed_blocks========')
 
     res=[]
     db = connect2db()
@@ -333,9 +356,11 @@ def get_changed_blocks():
         res = cursor.fetchall()
 
     except:
-        print('Error get_changed_blocks: ',query_text) #TODO(me):logging
+        logging.error('Error get_changed_blocks: ',query_text)
     finally:
         db.close()
+
+    logging.debug('find blocks-'+str(len(res)))
 
     modified_objects=[]
     not_found_objects = []
@@ -346,7 +371,8 @@ def get_changed_blocks():
         else:
             if not object_name in modified_objects:
                 modified_objects.append(object_name)
-
+    logging.debug('modified_objects-'+str(len(modified_objects)))
+    logging.debug('not_found_objects-'+str(len(not_found_objects)))
 
     assert len(not_found_objects)==0,\
         'Не все объекты найдены в таблице ссылок ('+str(len(not_found_objects))+', пример: '+not_found_objects[0]+')'
@@ -354,44 +380,102 @@ def get_changed_blocks():
     return modified_objects
 
 
-def move_changed_files_to_wd():
+def move_changed_files_to_wd(modified_files):
     '''
     собирает файлы, относящиеся к измененным блокам
     и копирует их в рабочий каталог
     из каталога полных текстов
     '''
-    pass
+    logging.debug('========move_changed_files_to_wd========')
 
-def move_dummy_objects_to_wd():
+    for file in modified_files:
+        shutil.copy(file,parametrs['work_catalog']+'\\'+os.path.basename(file))
+        logging.debug('copy '+file+' to '+parametrs['work_catalog'])
+
+def move_dummy_objects_to_wd(modified_objects):
     '''
     Собирает все зависимые объекты по данным измененных
     и копирует их в рабочий каталог
     из каталога  dummy
     '''
-    pass
+    logging.debug('========move_dummy_objects_to_wd========')
 
-def cat_configuration_xml():
+    for modified_object in modified_objects:
+        names_list = os.path.basename(modified_object).split('.')
+
+        #переопределеим элемент для дальнейшего использования
+        modified_object=[modified_object,names_list]
+
+        if len(names_list)==2:
+            continue
+        all_dependencies={}
+        for dependencie in list([it['dependencies'] for it in meta_table_list if it['name']==names_list[1]])[0]: #todo: заменить на что-то эту жесть
+            all_dependencies[dependencie]=None
+
+        for dependencie in all_dependencies.keys():
+            part_list=dependencie.split('.')
+            dummy_name = part_list[0].replace('Ref','')\
+                         +'.'+ part_list[1]\
+                         +'.xml'
+            shutil.copy(parametrs['dummy_text_catalog']+'\\'+dummy_name,parametrs['work_catalog']+'\\'+dummy_name)
+            logging.debug('copy '+dummy_name+' to '+parametrs['work_catalog'])
+
+
+def cat_configuration_xml(modified_objects):
     '''
     удаляет из узла ChildObjects файла Configuration.xml все, кроме нужных:
     измененных объектов и зависящих от них,
     копирует файл Configuration.xml в рабочий каталог
     '''
-    pass
+
+    logging.debug('========cat_configuration_xml========')
+
+    with open(parametrs['full_text_catalog']+'\\Configuration.xml','r',-1,'UTF-8') as source_file:
+        file_str=source_file.read()
+    find_res = re.search('<ChildObjects>.*</ChildObjects>', file_str, re.DOTALL)
+
+    substitute_string = '<ChildObjects>\n'
+
+    for modified_object in modified_objects:
+        names_list = os.path.basename(modified_object).split('.')
+        if len(names_list)==2:
+            continue
+        node_type=names_list[0].replace('Ref','')
+        node_text=names_list[1]
+        substitute_string = substitute_string+'\t\t\t<'+node_type+'>'+node_text+'</'+node_type+'>\n'
+    substitute_string=substitute_string+'\t\t</ChildObjects>\n'
+
+    logging.debug('replace ChildObjects with '+substitute_string)
+
+    file_str = file_str.replace(find_res.group(),substitute_string)
+
+    with open(parametrs['work_catalog']+'\\Configuration.xml','w',-1,'UTF-8') as res_file:
+        res_file.write(file_str)
+
 
 def import_1c():
     '''
     Загружает конфигурацию 1С из файлов рабочего каталога
     '''
-    os.system(parametrs['1c_starter']
+    logging.debug('========import_1c========')
+    status = os.system(parametrs['1c_starter']
             +' DESIGNER /S'+parametrs['1c_server']+'\\'+parametrs['1c_shad_base']
             +' /N'+parametrs['1c_shad_login']+' /P'+parametrs['1c_shad_pass']
             +' /LoadConfigFiles'+parametrs['full_text_catalog'])
 
+    logging.debug('import status-'+repr(status))
+
 def export_1c():
-    os.system(parametrs['1c_starter']
+    '''
+    Выгружает конфигурацию 1С в файлы рабочего каталога
+    '''
+    logging.debug('========export_1c========')
+    status = os.system(parametrs['1c_starter']
             +' DESIGNER /S'+parametrs['1c_server']+'\\'+parametrs['1c_shad_base']
             +' /N'+parametrs['1c_shad_login']+' /P'+parametrs['1c_shad_pass']
-            +' /DumpConfigToFiles '+parametrs['full_text_catalog'])
+            +' /DumpConfigToFiles '+parametrs['full_text_catalog']
+            +' /out'+get_param('log_folder')+'\\export_log.txt')
+    logging.debug('export status-'+repr(status))
 
 def copy_changed_bloсks():
     '''
@@ -402,26 +486,30 @@ def get_changed_files_list(modified_objects):
     '''
     возвращает список измененных файлов по списку объектов
     '''
+    logging.debug('========get_changed_files_list========')
 
     modified_files = []
     for object_name in modified_objects:
         #работаем с именем файла без расширения
         short_name = os.path.basename(object_name)[:-4]
         modified_files.extend(glob.glob(os.path.dirname(object_name)+'\\'+short_name+'*.*'))
-
+    logging.debug('изменено файлов '+str(len(modified_files)))
     return modified_files
 
 def full_export():
+    '''
+    запускает полную выгрузку 1С в файлы
+    '''
+    logging.debug('========full_export========')
 
     begin_time = datetime.datetime.now()
 
-    read_ini_file()
 
-    #пишем в папку git  файл 'я работаю'
+    logging.debug('пишем в папку git  файл "я работаю"')
     tell2git_im_busy('проводится полная выгрузка конфигурации')
 
 
-    # полностью копируем таблицу configsave в тень
+    logging.debug('полностью копируем таблицу configsave в тень')
     db = connect2db()
     cursor = db.cursor()
     cursor.execute('DROP TABLE ['+parametrs['1c_shad_base']+'].[dbo].[Config]')
@@ -433,30 +521,31 @@ def full_export():
 
 
 
-    # запускаем 1с с командой “Выгрузить файлы”
-
+    logging.debug('запускаем 1с с командой “Выгрузить файлы”')
     export_1c()
 
-    # разбираем выгруженные файлы по папкам
+    logging.debug('разбираем выгруженные файлы по папкам')
     dots2folders(parametrs['full_text_catalog'],parametrs['git_work_catalog'])
 
-    # обновляем таблицу соответствий метаданных
+    logging.debug('обновляем таблицу соответствий метаданных')
     read_meta_table()
     read_all_uuid()
     check_uuid_table()
 
-    #обновляем папку стабов
+    logging.debug('обновляем папку стабов')
     fill_dummy_catalog()
 
     tell2git_im_free()
 
-    print('время выполнения сценария - ',datetime.datetime.now() - begin_time)
+    logging.debug('время выполнения сценария - '+str(datetime.datetime.now() - begin_time))
 
 def save_1c():
-
+    '''
+    Сохраняет измененные объекты 1С в рабочий каталог Git
+    '''
+    logging.debug('========save_1c========')
     begin_time = datetime.datetime.now()
-
-    read_ini_file()
+    tell2git_im_busy('проводится частичная выгрузка конфигурации')
 
     with open('meta_table_list.dat', 'rb') as dump_file:
         meta_table_list.extend(pickle.load(dump_file))
@@ -465,21 +554,21 @@ def save_1c():
         uuid_dict.update(pickle.load(dump_file))
 
     modified_objects = get_changed_blocks()
+    tell2git_im_busy(modified_objects)
+
 
     if parametrs['full_text_catalog']+'\\Configuration.xml' in modified_objects:
-        print('Нужна полная выгрузка')
-        #todo: таки нужна полная выгрузка
+        full_export()
+        return
 
     modified_files = get_changed_files_list(modified_objects)
 
-    #todo: move_changed_files_to_wd
-    move_changed_files_to_wd()
+    move_changed_files_to_wd(modified_files)
 
-    #todo:move_dummy_objects_to_wd
-    move_dummy_objects_to_wd()
 
-    #todo:cat_configuration_xml
-    cat_configuration_xml()
+    move_dummy_objects_to_wd(modified_objects)
+
+    cat_configuration_xml(modified_objects)
 
     #import_1c()
 
@@ -489,13 +578,13 @@ def save_1c():
 
     dots2folders(parametrs['work_catalog'],parametrs['git_work_catalog'],modified_files)
 
-    print('время выполнения сценария - ',datetime.datetime.now() - begin_time)
+    tell2git_im_free()
+
+    logging.debug('время выполнения сценария - '+str(datetime.datetime.now() - begin_time))
 
 def prepare():
 
     begin_time = datetime.datetime.now()
-
-    read_ini_file()
 
     read_meta_table()
 
@@ -503,16 +592,29 @@ def prepare():
 
     check_uuid_table()
 
-    print('время выполнения сценария - ',datetime.datetime.now() - begin_time)
+    logging.debug('время выполнения сценария - ',datetime.datetime.now() - begin_time)
+
+def test_func():
+
+    save_1c()
+
 
 if __name__ == '__main__':
+
+    logging.basicConfig(format = u'%(filename)s[LINE:%(lineno)d]# %(levelname)-8s [%(asctime)s]  %(message)s',
+                        level = logging.DEBUG)
+
+    read_ini_file()
+
     #operation = sys.argv[1]
 
     #if operation == '-s':
-    save_1c()
+    #save_1c()
 
     #elif operation=='-sa':
     #full_export()
+
+    test_func()
 
 
 
