@@ -9,6 +9,7 @@ import glob
 import shutil
 import filecmp
 import hashlib
+import pickle
 
 __author__ = 'jgoncharova'
 
@@ -73,6 +74,8 @@ def read_meta_table():
     read_meta_object(children_objects, 'AccountingRegister')
     read_meta_object(children_objects, 'ChartOfCalculationTypes')
 
+    with open('meta_table_list.dat', 'wb') as dump_file:
+        pickle.dump(meta_table_list,dump_file)
 
 def read_ini_file():
     """
@@ -175,6 +178,9 @@ def read_all_uuid():
                 #print(this_file_name) #TODO: в логи!'''
                 pass
 
+    with open('uuid_dict.dat','wb') as dump_file:
+        pickle.dump(uuid_dict, dump_file)
+
 
 
 
@@ -221,12 +227,14 @@ def tell2git_im_free():
     mark_filename=os.path.join(parametrs['git_work_catalog'],'1C2Git_export_status.txt')
     os.remove(mark_filename)
 
-def dots2folders(source_catalog,destination_catalog):
-    """копирует файлы из source_catalog в destination_catalog
-     параллельно разбивая их по папкам, так что
-     C:\1C2Git_files\full_text\ChartOfCalculationTypes.Удержания.Form.ФормаСписка.Form.Module.txt
-     превращается в C:\Buh_korp\ChartOfCalculationTypes\Удержания\Form\ФормаСписка\Form\Module.txt"""
-
+def dots2folders(source_catalog,destination_catalog,files_list):
+    """
+    копирует файлы из source_catalog в destination_catalog
+    параллельно разбивая их по папкам, так что
+    C:\1C2Git_files\full_text\ChartOfCalculationTypes.Удержания.Form.ФормаСписка.Form.Module.txt
+    превращается в C:\Buh_korp\ChartOfCalculationTypes\Удержания\Form\ФормаСписка\Form\Module.txt
+    """
+    #todo: использовать список файлов
     all_dot_files=glob.glob(source_catalog+'\\*.*')
 
     for dot_file in all_dot_files:
@@ -246,7 +254,7 @@ def dots2folders(source_catalog,destination_catalog):
         elif parametrs['how_to_copy']=='cmp':
             if not os.path.exists(full_new_name) or not filecmp.cmp(dot_file,full_new_name):
                 shutil.copy(dot_file,full_new_name)
-                print('копируем '+dot_file)
+                #print('копируем '+dot_file)
         elif parametrs['how_to_copy']=='hash':
             if not os.path.exists(full_new_name):
                 shutil.copy(dot_file,full_new_name)
@@ -310,6 +318,7 @@ def get_changed_blocks():
     '''
     получает из запроса к 2-м базам перечень измененных блоков
     '''
+
     res=[]
     db = connect2db()
     cursor = db.cursor()
@@ -339,6 +348,69 @@ def get_changed_blocks():
                 modified_objects.append(object_name)
 
 
+    assert len(not_found_objects)==0,\
+        'Не все объекты найдены в таблице ссылок ('+str(len(not_found_objects))+', пример: '+not_found_objects[0]+')'
+
+    return modified_objects
+
+
+def move_changed_files_to_wd():
+    '''
+    собирает файлы, относящиеся к измененным блокам
+    и копирует их в рабочий каталог
+    из каталога полных текстов
+    '''
+    pass
+
+def move_dummy_objects_to_wd():
+    '''
+    Собирает все зависимые объекты по данным измененных
+    и копирует их в рабочий каталог
+    из каталога  dummy
+    '''
+    pass
+
+def cat_configuration_xml():
+    '''
+    удаляет из узла ChildObjects файла Configuration.xml все, кроме нужных:
+    измененных объектов и зависящих от них,
+    копирует файл Configuration.xml в рабочий каталог
+    '''
+    pass
+
+def import_1c():
+    '''
+    Загружает конфигурацию 1С из файлов рабочего каталога
+    '''
+    os.system(parametrs['1c_starter']
+            +' DESIGNER /S'+parametrs['1c_server']+'\\'+parametrs['1c_shad_base']
+            +' /N'+parametrs['1c_shad_login']+' /P'+parametrs['1c_shad_pass']
+            +' /LoadConfigFiles'+parametrs['full_text_catalog'])
+
+def export_1c():
+    os.system(parametrs['1c_starter']
+            +' DESIGNER /S'+parametrs['1c_server']+'\\'+parametrs['1c_shad_base']
+            +' /N'+parametrs['1c_shad_login']+' /P'+parametrs['1c_shad_pass']
+            +' /DumpConfigToFiles '+parametrs['full_text_catalog'])
+
+def copy_changed_bloсks():
+    '''
+
+    '''
+
+def get_changed_files_list(modified_objects):
+    '''
+    возвращает список измененных файлов по списку объектов
+    '''
+
+    modified_files = []
+    for object_name in modified_objects:
+        #работаем с именем файла без расширения
+        short_name = os.path.basename(object_name)[:-4]
+        modified_files.extend(glob.glob(os.path.dirname(object_name)+'\\'+short_name+'*.*'))
+
+    return modified_files
+
 def full_export():
 
     begin_time = datetime.datetime.now()
@@ -363,25 +435,22 @@ def full_export():
 
     # запускаем 1с с командой “Выгрузить файлы”
 
-    os.system(parametrs['1c_starter']
-            +' DESIGNER /S'+parametrs['1c_server']+'\\'+parametrs['1c_shad_base']
-            +' /N'+parametrs['1c_shad_login']+' /P'+parametrs['1c_shad_pass']
-            +' /DumpConfigToFiles '+parametrs['full_text_catalog'])
+    export_1c()
 
     # разбираем выгруженные файлы по папкам
     dots2folders(parametrs['full_text_catalog'],parametrs['git_work_catalog'])
 
     # обновляем таблицу соответствий метаданных
     read_meta_table()
+    read_all_uuid()
+    check_uuid_table()
 
     #обновляем папку стабов
     fill_dummy_catalog()
 
     tell2git_im_free()
 
-    end_time = datetime.datetime.now()
-    delta = end_time - begin_time
-    print('время выполнения сценария - ',delta)
+    print('время выполнения сценария - ',datetime.datetime.now() - begin_time)
 
 def save_1c():
 
@@ -389,20 +458,41 @@ def save_1c():
 
     read_ini_file()
 
-    read_meta_table()
+    with open('meta_table_list.dat', 'rb') as dump_file:
+        meta_table_list.extend(pickle.load(dump_file))
 
-    #read_all_uuid()
+    with open('uuid_dict.dat', 'rb') as dump_file:
+        uuid_dict.update(pickle.load(dump_file))
 
-    #check_uuid_table()
+    modified_objects = get_changed_blocks()
 
-    fill_dummy_catalog()
+    if parametrs['full_text_catalog']+'\\Configuration.xml' in modified_objects:
+        print('Нужна полная выгрузка')
+        #todo: таки нужна полная выгрузка
 
+    modified_files = get_changed_files_list(modified_objects)
 
-    end_time = datetime.datetime.now()
-    delta = end_time - begin_time
-    print('время выполнения сценария - ',delta)
+    #todo: move_changed_files_to_wd
+    move_changed_files_to_wd()
+
+    #todo:move_dummy_objects_to_wd
+    move_dummy_objects_to_wd()
+
+    #todo:cat_configuration_xml
+    cat_configuration_xml()
+
+    #import_1c()
+
+    copy_changed_bloсks()
+
+    #export_1c()
+
+    dots2folders(parametrs['work_catalog'],parametrs['git_work_catalog'],modified_files)
+
+    print('время выполнения сценария - ',datetime.datetime.now() - begin_time)
 
 def prepare():
+
     begin_time = datetime.datetime.now()
 
     read_ini_file()
@@ -413,22 +503,17 @@ def prepare():
 
     check_uuid_table()
 
-    get_changed_blocks()
-
-    end_time = datetime.datetime.now()
-    delta = end_time - begin_time
-    print('время выполнения сценария - ',delta)
+    print('время выполнения сценария - ',datetime.datetime.now() - begin_time)
 
 if __name__ == '__main__':
     #operation = sys.argv[1]
 
     #if operation == '-s':
-    #save_1c()
+    save_1c()
 
     #elif operation=='-sa':
     #full_export()
 
-    prepare()
 
 
 
