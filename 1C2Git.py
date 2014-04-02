@@ -20,13 +20,38 @@ parametrs = {}
 meta_table_list = []
 uuid_dict = {}
 
+#++ ini procs
 
+def read_ini_file():
+    """
+	считываем файл с настройками
+	файл должен называться 1C2Git.cfg и лежать рядом со сценарием 1C2Git.py
+	1C2Git.cfg не коммитится!!
+	"""
+    config_raw = configparser.ConfigParser()
+    config_raw.read('1C2Git.cfg')
+    for section in config_raw.sections():
+        parametrs.update(config_raw.items(section))
+    logging.debug('Считано '+repr(len(parametrs))+' параметров настроек')
+
+#-- ini procs
+
+#++ common procs
+
+def get_param(param_name):
+    param_value=parametrs.get(param_name,None)
+    if param_value is None:
+        raise 'Не найден в конфигурации параметр '+param_name
+
+    return param_value
+#-- common procs
+
+#++ reading configuration info
 
 def read_meta_object(node, type):
     elements_list = node.findall("{http://v8.1c.ru/8.3/MDClasses}" + type)
     elements_defined_list = [{'type': type, 'name': x.text} for x in elements_list]
     meta_table_list.extend(elements_defined_list)
-
 
 def read_meta_table():
     """
@@ -79,27 +104,6 @@ def read_meta_table():
 
     logging.debug('Прочитано объектов '+str(len(meta_table_list)))
 
-def read_ini_file():
-    """
-	считываем файл с настройками
-	файл должен называться 1C2Git.cfg и лежать рядом со сценарием 1C2Git.py
-	1C2Git.cfg не коммитится!!
-	"""
-    config_raw = configparser.ConfigParser()
-    config_raw.read('1C2Git.cfg')
-    for section in config_raw.sections():
-        parametrs.update(config_raw.items(section))
-
-
-    logging.debug('Считано '+repr(len(parametrs))+' параметров настроек')
-
-def get_param(param_name):
-    param_value=parametrs.get(param_name,None)
-    if param_value is None:
-        raise 'Не найден в конфигурации параметр '+param_name
-
-    return param_value
-
 def read_oblect_uuid_and_dependencies(metadata_item):
     """
 	считывает файл с описанием объекта метаданных
@@ -149,7 +153,6 @@ def get_file_uuid(file_name):
         logging.error('Error uuid extract from file:'+repr(file_name))
         return None
 
-
 def read_all_uuid():
 
     # считываем корень конфигурации
@@ -193,6 +196,78 @@ def read_all_uuid():
 
     logging.debug('размер uuid_dict-'+str(len(uuid_dict)))
 
+def fill_dummy_catalog():
+
+    for meta_object in meta_table_list:
+
+        object_file_name = parametrs['full_text_catalog'] \
+                           + '\\' + meta_object['type'] \
+                           + '.' + meta_object['name'] + '.xml'
+
+        object_new_file_name = parametrs['dummy_text_catalog'] \
+                           + '\\' + meta_object['type'] \
+                           + '.' + meta_object['name'] + '.xml'
+                            # не работает
+
+        if not os.path.exists(object_new_file_name):
+
+            file_str=open(object_file_name,'r',-1,'UTF-8').read()
+            unwanted_nodes = ['ChildObjects',
+                              'DefaultObjectForm',
+                              'DefaultListForm',
+                              'DefaultChoiceForm',
+                              'DefaultFolderForm',
+                              'DefaultFolderChoiceForm',
+                              'RegisterRecords',
+                              'Characteristics']
+            string_was_changed = False
+            for unwanted_node in unwanted_nodes:
+                find_res = re.search('<'+unwanted_node+'>.*</'+unwanted_node+'>',file_str,re.DOTALL)  #TODO: заменить грамотной записью xml!!
+                if not find_res is None:
+                    file_str = file_str.replace(find_res.group(),'<'+unwanted_node+'/>')
+                    string_was_changed = True
+
+            if string_was_changed:
+                data_file=open(object_new_file_name,'w',-1,'UTF-8')
+                data_file.write(file_str)
+
+
+
+#++ talk with Git
+def tell2git_im_busy(message):
+
+    mark_filename=os.path.join(parametrs['git_work_catalog'],'1C2Git_export_status.txt')
+
+    with open(mark_filename,'w',-1,'UTF-8') as mark_file:
+        mark_file.write('Идет выгрузка из 1С в Git, время начала - '+datetime.datetime.now().strftime("%d.%m.%Y %I:%M %p")+'\n')
+
+        if type(message)==str:
+           mark_file.write(message)
+
+        elif type(message)==list:
+            mark_file.write('Состав объектов для выгрузки:')
+            for m_obj in message:
+                mark_file.write(m_obj)
+        else:
+             raise Exception("Неверный тип message")
+
+def tell2git_im_free():
+
+    mark_filename=os.path.join(parametrs['git_work_catalog'],'1C2Git_export_status.txt')
+    os.remove(mark_filename)
+
+
+
+#++ work with db
+
+def copy_configsave():
+    db = connect2db()
+    cursor = db.cursor()
+    cursor.execute('DROP TABLE [' + parametrs['1c_shad_base'] + '].[dbo].[Config]')
+    query_text = '''SELECT * INTO [''' + parametrs['1c_shad_base'] + '''].[dbo].[Config]
+    FROM  [''' + parametrs['1c_dev_base'] + '''].[dbo].[Config] '''
+    cursor.execute(query_text)
+    db.close()
 
 def check_uuid_table():
     #ищем потерянные uuid по базе данных
@@ -219,29 +294,130 @@ def check_uuid_table():
     with open('meta_table_list.dat', 'wb') as dump_file:
         pickle.dump(meta_table_list,dump_file)
 
-def tell2git_im_busy(message):
+def connect2db():
 
-    mark_filename=os.path.join(parametrs['git_work_catalog'],'1C2Git_export_status.txt')
+    connect_string = 'DRIVER={{SQL Server}};SERVER={0};DATABASE={1};UID={2};PWD={3}'.format(parametrs['server_name'],
+                                                                                            parametrs['dev_database'],
+                                                                                            parametrs['sql_login'],
+                                                                                            parametrs['sql_pass'])
 
-    with open(mark_filename,'w',-1,'UTF-8') as mark_file:
-        mark_file.write('Идет выгрузка из 1С в Git, время начала - '+datetime.datetime.now().strftime("%d.%m.%Y %I:%M %p")+'\n')
+    return pyodbc.connect(connect_string)
 
-        if type(message)==str:
-           mark_file.write(message)
+def get_changed_blocks():
+    '''
+    получает из запроса к 2-м базам перечень измененных блоков
+    '''
+    logging.debug('========get_changed_blocks========')
 
-        elif type(message)==list:
-            mark_file.write('Состав объектов для выгрузки:')
-            for m_obj in message:
-                mark_file.write(m_obj)
+    res=[]
+    db = connect2db()
+    cursor = db.cursor()
+    try:
+        query_text = '''SELECT dev.FileName
+        FROM ['''+parametrs['1c_dev_base']+'''].[dbo].[Config] as dev
+        LEFT JOIN  ['''+parametrs['1c_shad_base']+'''].[dbo].[Config] as shad
+        ON dev.FileName = shad.FileName
+        WHERE dev.Modified <> shad.Modified
+        OR shad.Modified IS NULL'''
+        cursor.execute(query_text)
+        res = cursor.fetchall()
+
+    except:
+        logging.error('Error get_changed_blocks: ',query_text)
+    finally:
+        db.close()
+
+    logging.debug('find blocks-'+str(len(res)))
+
+    modified_objects=[]
+    not_found_objects = []
+    for i in res:
+        object_name=uuid_dict.get(i[0],uuid_dict.get(i[0][:36],None))
+        if object_name is  None:
+            not_found_objects.append(i[0])
         else:
-             raise Exception("Неверный тип message")
+            if not object_name in modified_objects:
+                modified_objects.append(object_name)
+    logging.debug('modified_objects-'+str(len(modified_objects)))
+    logging.debug('not_found_objects-'+str(len(not_found_objects)))
 
+    assert len(not_found_objects)==0,\
+        'Не все объекты найдены в таблице ссылок ('+str(len(not_found_objects))+', пример: '+not_found_objects[0]+')'
 
+    return modified_objects
 
-def tell2git_im_free():
+#++ work with filesystem
 
-    mark_filename=os.path.join(parametrs['git_work_catalog'],'1C2Git_export_status.txt')
-    os.remove(mark_filename)
+def move_changed_files_to_wd(modified_files):
+    '''
+    собирает файлы, относящиеся к измененным блокам
+    и копирует их в рабочий каталог
+    из каталога полных текстов
+    '''
+    logging.debug('========move_changed_files_to_wd========')
+
+    for file in modified_files:
+        shutil.copy(file,parametrs['work_catalog']+'\\'+os.path.basename(file))
+        logging.debug('copy '+file+' to '+parametrs['work_catalog'])
+
+def move_dummy_objects_to_wd(modified_objects):
+    '''
+    Собирает все зависимые объекты по данным измененных
+    и копирует их в рабочий каталог
+    из каталога  dummy
+    '''
+    logging.debug('========move_dummy_objects_to_wd========')
+
+    for modified_object in modified_objects:
+        names_list = os.path.basename(modified_object).split('.')
+
+        #переопределеим элемент для дальнейшего использования
+        modified_object=[modified_object,names_list]
+
+        if len(names_list)==2:
+            continue
+        all_dependencies={}
+        for dependencie in list([it['dependencies'] for it in meta_table_list if it['name']==names_list[1]])[0]: #todo: заменить на что-то эту жесть
+            all_dependencies[dependencie]=None
+
+        for dependencie in all_dependencies.keys():
+            part_list=dependencie.split('.')
+            dummy_name = part_list[0].replace('Ref','')\
+                         +'.'+ part_list[1]\
+                         +'.xml'
+            shutil.copy(parametrs['dummy_text_catalog']+'\\'+dummy_name,parametrs['work_catalog']+'\\'+dummy_name)
+            logging.debug('copy '+dummy_name+' to '+parametrs['work_catalog'])
+
+def cat_configuration_xml(modified_objects):
+    '''
+    удаляет из узла ChildObjects файла Configuration.xml все, кроме нужных:
+    измененных объектов и зависящих от них,
+    копирует файл Configuration.xml в рабочий каталог
+    '''
+
+    logging.debug('========cat_configuration_xml========')
+
+    with open(parametrs['full_text_catalog']+'\\Configuration.xml','r',-1,'UTF-8') as source_file:
+        file_str=source_file.read()
+    find_res = re.search('<ChildObjects>.*</ChildObjects>', file_str, re.DOTALL)
+
+    substitute_string = '<ChildObjects>\n'
+
+    for modified_object in modified_objects:
+        names_list = os.path.basename(modified_object).split('.')
+        if len(names_list)==2:
+            continue
+        node_type=names_list[0].replace('Ref','')
+        node_text=names_list[1]
+        substitute_string = substitute_string+'\t\t\t<'+node_type+'>'+node_text+'</'+node_type+'>\n'
+    substitute_string=substitute_string+'\t\t</ChildObjects>\n'
+
+    logging.debug('replace ChildObjects with '+substitute_string)
+
+    file_str = file_str.replace(find_res.group(),substitute_string)
+
+    with open(parametrs['work_catalog']+'\\Configuration.xml','w',-1,'UTF-8') as res_file:
+        res_file.write(file_str)
 
 def dots2folders(source_catalog,destination_catalog,files_list=None):
     """
@@ -287,171 +463,7 @@ def dots2folders(source_catalog,destination_catalog,files_list=None):
         else:
             raise Exception("не заполнена настройка how_to_copy")
 
-
-
-def fill_dummy_catalog():
-
-    for meta_object in meta_table_list:
-
-        object_file_name = parametrs['full_text_catalog'] \
-                           + '\\' + meta_object['type'] \
-                           + '.' + meta_object['name'] + '.xml'
-
-        object_new_file_name = parametrs['dummy_text_catalog'] \
-                           + '\\' + meta_object['type'] \
-                           + '.' + meta_object['name'] + '.xml'
-                            # не работает
-
-        if not os.path.exists(object_new_file_name):
-
-            file_str=open(object_file_name,'r',-1,'UTF-8').read()
-            unwanted_nodes = ['ChildObjects',
-                              'DefaultObjectForm',
-                              'DefaultListForm',
-                              'DefaultChoiceForm',
-                              'DefaultFolderForm',
-                              'DefaultFolderChoiceForm',
-                              'RegisterRecords',
-                              'Characteristics']
-            string_was_changed = False
-            for unwanted_node in unwanted_nodes:
-                find_res = re.search('<'+unwanted_node+'>.*</'+unwanted_node+'>',file_str,re.DOTALL)  #TODO: заменить грамотной записью xml!!
-                if not find_res is None:
-                    file_str = file_str.replace(find_res.group(),'<'+unwanted_node+'/>')
-                    string_was_changed = True
-
-            if string_was_changed:
-                data_file=open(object_new_file_name,'w',-1,'UTF-8')
-                data_file.write(file_str)
-
-def connect2db():
-
-    connect_string = 'DRIVER={{SQL Server}};SERVER={0};DATABASE={1};UID={2};PWD={3}'.format(parametrs['server_name'],
-                                                                                            parametrs['dev_database'],
-                                                                                            parametrs['sql_login'],
-                                                                                            parametrs['sql_pass'])
-
-    return pyodbc.connect(connect_string)
-
-
-
-
-def get_changed_blocks():
-    '''
-    получает из запроса к 2-м базам перечень измененных блоков
-    '''
-    logging.debug('========get_changed_blocks========')
-
-    res=[]
-    db = connect2db()
-    cursor = db.cursor()
-    try:
-        query_text = '''SELECT dev.FileName
-        FROM ['''+parametrs['1c_dev_base']+'''].[dbo].[Config] as dev
-        LEFT JOIN  ['''+parametrs['1c_shad_base']+'''].[dbo].[Config] as shad
-        ON dev.FileName = shad.FileName
-        WHERE dev.Modified <> shad.Modified
-        OR shad.Modified IS NULL'''
-        cursor.execute(query_text)
-        res = cursor.fetchall()
-
-    except:
-        logging.error('Error get_changed_blocks: ',query_text)
-    finally:
-        db.close()
-
-    logging.debug('find blocks-'+str(len(res)))
-
-    modified_objects=[]
-    not_found_objects = []
-    for i in res:
-        object_name=uuid_dict.get(i[0],uuid_dict.get(i[0][:36],None))
-        if object_name is  None:
-            not_found_objects.append(i[0])
-        else:
-            if not object_name in modified_objects:
-                modified_objects.append(object_name)
-    logging.debug('modified_objects-'+str(len(modified_objects)))
-    logging.debug('not_found_objects-'+str(len(not_found_objects)))
-
-    assert len(not_found_objects)==0,\
-        'Не все объекты найдены в таблице ссылок ('+str(len(not_found_objects))+', пример: '+not_found_objects[0]+')'
-
-    return modified_objects
-
-
-def move_changed_files_to_wd(modified_files):
-    '''
-    собирает файлы, относящиеся к измененным блокам
-    и копирует их в рабочий каталог
-    из каталога полных текстов
-    '''
-    logging.debug('========move_changed_files_to_wd========')
-
-    for file in modified_files:
-        shutil.copy(file,parametrs['work_catalog']+'\\'+os.path.basename(file))
-        logging.debug('copy '+file+' to '+parametrs['work_catalog'])
-
-def move_dummy_objects_to_wd(modified_objects):
-    '''
-    Собирает все зависимые объекты по данным измененных
-    и копирует их в рабочий каталог
-    из каталога  dummy
-    '''
-    logging.debug('========move_dummy_objects_to_wd========')
-
-    for modified_object in modified_objects:
-        names_list = os.path.basename(modified_object).split('.')
-
-        #переопределеим элемент для дальнейшего использования
-        modified_object=[modified_object,names_list]
-
-        if len(names_list)==2:
-            continue
-        all_dependencies={}
-        for dependencie in list([it['dependencies'] for it in meta_table_list if it['name']==names_list[1]])[0]: #todo: заменить на что-то эту жесть
-            all_dependencies[dependencie]=None
-
-        for dependencie in all_dependencies.keys():
-            part_list=dependencie.split('.')
-            dummy_name = part_list[0].replace('Ref','')\
-                         +'.'+ part_list[1]\
-                         +'.xml'
-            shutil.copy(parametrs['dummy_text_catalog']+'\\'+dummy_name,parametrs['work_catalog']+'\\'+dummy_name)
-            logging.debug('copy '+dummy_name+' to '+parametrs['work_catalog'])
-
-
-def cat_configuration_xml(modified_objects):
-    '''
-    удаляет из узла ChildObjects файла Configuration.xml все, кроме нужных:
-    измененных объектов и зависящих от них,
-    копирует файл Configuration.xml в рабочий каталог
-    '''
-
-    logging.debug('========cat_configuration_xml========')
-
-    with open(parametrs['full_text_catalog']+'\\Configuration.xml','r',-1,'UTF-8') as source_file:
-        file_str=source_file.read()
-    find_res = re.search('<ChildObjects>.*</ChildObjects>', file_str, re.DOTALL)
-
-    substitute_string = '<ChildObjects>\n'
-
-    for modified_object in modified_objects:
-        names_list = os.path.basename(modified_object).split('.')
-        if len(names_list)==2:
-            continue
-        node_type=names_list[0].replace('Ref','')
-        node_text=names_list[1]
-        substitute_string = substitute_string+'\t\t\t<'+node_type+'>'+node_text+'</'+node_type+'>\n'
-    substitute_string=substitute_string+'\t\t</ChildObjects>\n'
-
-    logging.debug('replace ChildObjects with '+substitute_string)
-
-    file_str = file_str.replace(find_res.group(),substitute_string)
-
-    with open(parametrs['work_catalog']+'\\Configuration.xml','w',-1,'UTF-8') as res_file:
-        res_file.write(file_str)
-
+#++ work with 1C
 
 def import_1c():
     '''
@@ -495,6 +507,9 @@ def get_changed_files_list(modified_objects):
         modified_files.extend(glob.glob(os.path.dirname(object_name)+'\\'+short_name+'*.*'))
     logging.debug('изменено файлов '+str(len(modified_files)))
     return modified_files
+#-- work with 1C
+
+#++ big procs
 
 def full_export():
     '''
@@ -510,19 +525,12 @@ def full_export():
 
 
     logging.debug('полностью копируем таблицу configsave в тень')
-    db = connect2db()
-    cursor = db.cursor()
-    cursor.execute('DROP TABLE ['+parametrs['1c_shad_base']+'].[dbo].[Config]')
-    query_text = '''SELECT * INTO ['''+parametrs['1c_shad_base']+'''].[dbo].[Config]
-    FROM  ['''+parametrs['1c_dev_base']+'''].[dbo].[Config] '''
-    cursor.execute(query_text)
-
-    db.close()
+    copy_configsave()
 
 
 
     logging.debug('запускаем 1с с командой “Выгрузить файлы”')
-    export_1c()
+    #export_1c()
 
     logging.debug('разбираем выгруженные файлы по папкам')
     dots2folders(parametrs['full_text_catalog'],parametrs['git_work_catalog'])
@@ -558,6 +566,7 @@ def save_1c():
 
 
     if parametrs['full_text_catalog']+'\\Configuration.xml' in modified_objects:
+        logging.debug('need full export')
         full_export()
         return
 
@@ -597,7 +606,7 @@ def prepare():
 def test_func():
 
     save_1c()
-
+#-- big procs
 
 if __name__ == '__main__':
 
