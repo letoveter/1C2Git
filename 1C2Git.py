@@ -29,9 +29,14 @@ def read_ini_file():
 	1C2Git.cfg не коммитится!!
 	"""
     config_raw = configparser.ConfigParser()
-    config_raw.read('1C2Git.cfg')
+    config_raw.read('1C2Git.cfg','UTF-8')
     for section in config_raw.sections():
-        parametrs.update(config_raw.items(section))
+        for parametr in config_raw.items(section):
+            if parametr[0][-4:]=='list':
+                parametrs[parametr[0]] = parametr[1].split(',')
+            else:
+                parametrs[parametr[0]] = parametr[1]
+
     logging.debug('Считано '+repr(len(parametrs))+' параметров настроек')
 
 #-- ini procs
@@ -44,6 +49,17 @@ def get_param(param_name):
         raise 'Не найден в конфигурации параметр '+param_name
 
     return param_value
+
+
+def simply_empty_dir(path):
+    for the_file in os.listdir(path):
+        file_path = os.path.join(path, the_file)
+        try:
+            if os.path.isfile(file_path):
+                os.unlink(file_path)
+        except:
+            logging.error("can't delete " + the_file)
+
 #-- common procs
 
 #++ reading configuration info
@@ -117,32 +133,39 @@ def read_oblect_uuid_and_dependencies(metadata_item):
     uuid_dict[get_file_uuid(this_file_name)] = this_file_name
 
     #подтягиваем формы и отчеты
-    if len(file_tree.getroot()[0]) > 2:  #TODO: оформить через XPath
-        children = file_tree.getroot()[0][2]
+    root = file_tree.getroot()
 
-        form_elements = children.findall('{http://v8.1c.ru/8.3/MDClasses}Form')
-        for form_element in form_elements:
-            file_name = parametrs['full_text_catalog'] + '\\' + metadata_item['type'] + '.' + metadata_item[
-                'name'] + '.Form.' + form_element.text + '.xml'
-            uuid_dict[get_file_uuid(file_name)] = file_name
+    form_elements = root.findall('.//{http://v8.1c.ru/8.3/MDClasses}Form')
+    for form_element in form_elements:
+        file_name = parametrs['full_text_catalog'] + '\\' + metadata_item['type'] + '.' + metadata_item[
+            'name'] + '.Form.' + form_element.text + '.xml'
+        uuid_dict[get_file_uuid(file_name)] = file_name
 
-        template_elements = children.findall('{http://v8.1c.ru/8.3/MDClasses}Template')
-        for template_element in template_elements:
-            file_name = parametrs['full_text_catalog'] + '\\' + metadata_item['type'] + '.' + metadata_item[
-                'name'] + '.Template.' + template_element.text + '.xml'
-            uuid_dict[get_file_uuid(file_name)] = file_name
+    template_elements =  root.findall('.//{http://v8.1c.ru/8.3/MDClasses}Template')
+    for template_element in template_elements:
+        file_name = parametrs['full_text_catalog'] + '\\' + metadata_item['type'] + '.' + metadata_item[
+            'name'] + '.Template.' + template_element.text + '.xml'
+        uuid_dict[get_file_uuid(file_name)] = file_name
 
-        command_elements = children.findall('{http://v8.1c.ru/8.3/MDClasses}Command')
-        for command_element in command_elements:
-            uuid_dict[command_element.attrib['uuid']] = this_file_name + '_command'
+    command_elements =  root.findall('.//{http://v8.1c.ru/8.3/MDClasses}Command')
+    for command_element in command_elements:
+        uuid_dict[command_element.attrib['uuid']] = this_file_name + '_command'
 
     # заполняем таблицу зависимостей
     dep_list=[]
-    root = file_tree.getroot()
     for attribute_node in root.findall('.//{http://v8.1c.ru/8.1/data/core}Type'):
-        if attribute_node.text[:3]=='cfg':
-           dep_list.append(attribute_node.text[4:].replace('ref',''))
+        if attribute_node.text[:3]=='cfg' and not attribute_node.text == 'cfg:'+metadata_item['type'] + 'Ref.' + metadata_item['name']:
+           dep_list.append(attribute_node.text[4:].replace('Ref',''))
+
+    for from_node in root.findall('.//*[@from]'):
+        names_list = from_node.attrib['from'].split('.')
+        dep_name= names_list[0]+'.'+names_list[1]
+        if not dep_name in dep_list:
+            dep_list.append(dep_name)
+            #logging.debug('extract '+dep_name+' from '+repr(from_node))
+
     metadata_item['dependencies']=dep_list
+
 
 def get_file_uuid(file_name):
     file_tree = etree.parse(file_name)
@@ -198,7 +221,9 @@ def read_all_uuid():
 
 def fill_dummy_catalog():
 
+    logging.debug('========fill_dummy_catalog========')
     for meta_object in meta_table_list:
+
 
         object_file_name = parametrs['full_text_catalog'] \
                            + '\\' + meta_object['type'] \
@@ -212,24 +237,28 @@ def fill_dummy_catalog():
         if not os.path.exists(object_new_file_name):
 
             file_str=open(object_file_name,'r',-1,'UTF-8').read()
-            unwanted_nodes = ['ChildObjects',
-                              'DefaultObjectForm',
-                              'DefaultListForm',
-                              'DefaultChoiceForm',
-                              'DefaultFolderForm',
-                              'DefaultFolderChoiceForm',
-                              'RegisterRecords',
-                              'Characteristics']
-            string_was_changed = False
+            if meta_object['type'] == 'Enum':
+                unwanted_nodes=[]
+            else:
+                unwanted_nodes = ['ChildObjects',
+                                  'DefaultObjectForm',
+                                  'DefaultListForm',
+                                  'DefaultChoiceForm',
+                                  'DefaultFolderForm',
+                                  'DefaultFolderChoiceForm',
+                                  'RegisterRecords',
+                                  'Characteristics',
+                                  'Type',
+                                  'CharacteristicExtValues']
+
             for unwanted_node in unwanted_nodes:
                 find_res = re.search('<'+unwanted_node+'>.*</'+unwanted_node+'>',file_str,re.DOTALL)  #TODO: заменить грамотной записью xml!!
                 if not find_res is None:
                     file_str = file_str.replace(find_res.group(),'<'+unwanted_node+'/>')
                     string_was_changed = True
 
-            if string_was_changed:
-                data_file=open(object_new_file_name,'w',-1,'UTF-8')
-                data_file.write(file_str)
+            data_file=open(object_new_file_name,'w',-1,'UTF-8')
+            data_file.write(file_str)
 
 
 
@@ -263,7 +292,11 @@ def tell2git_im_free():
 def copy_configsave():
     db = connect2db()
     cursor = db.cursor()
-    cursor.execute('DROP TABLE [' + parametrs['1c_shad_base'] + '].[dbo].[Config]')
+    try:
+        res=cursor.execute('DROP TABLE [' + parametrs['1c_shad_base'] + '].[dbo].[Config]')
+    except:
+        logging.error('drop table error:'+res)
+
     query_text = '''SELECT * INTO [''' + parametrs['1c_shad_base'] + '''].[dbo].[Config]
     FROM  [''' + parametrs['1c_dev_base'] + '''].[dbo].[Config] '''
     cursor.execute(query_text)
@@ -309,6 +342,7 @@ def get_changed_blocks():
     '''
     logging.debug('========get_changed_blocks========')
 
+    local_begin = datetime.datetime.now()
     res=[]
     db = connect2db()
     cursor = db.cursor()
@@ -317,10 +351,11 @@ def get_changed_blocks():
         FROM ['''+parametrs['1c_dev_base']+'''].[dbo].[Config] as dev
         LEFT JOIN  ['''+parametrs['1c_shad_base']+'''].[dbo].[Config] as shad
         ON dev.FileName = shad.FileName
-        WHERE dev.Modified <> shad.Modified
+        WHERE (dev.Modified - shad.Modified)>1
         OR shad.Modified IS NULL'''
         cursor.execute(query_text)
         res = cursor.fetchall()
+        #todo: WHERE (dev.Modified - shad.Modified)>1 - костыль, при копировании таблицы появляется секунда из ниоткуда
 
     except:
         logging.error('Error get_changed_blocks: ',query_text)
@@ -336,13 +371,17 @@ def get_changed_blocks():
         if object_name is  None:
             not_found_objects.append(i[0])
         else:
-            if not object_name in modified_objects:
-                modified_objects.append(object_name)
+            short_object_name = os.path.basename(object_name)[:-4]
+            if not short_object_name in modified_objects:
+                #пишем в список можифицированных объектов имя без расширения, например, Catalog.Банки
+                modified_objects.append(short_object_name)
     logging.debug('modified_objects-'+str(len(modified_objects)))
     logging.debug('not_found_objects-'+str(len(not_found_objects)))
 
     assert len(not_found_objects)==0,\
         'Не все объекты найдены в таблице ссылок ('+str(len(not_found_objects))+', пример: '+not_found_objects[0]+')'
+
+    logging.debug('время выполнения get_changed_blocks - '+str(datetime.datetime.now() - local_begin))
 
     return modified_objects
 
@@ -367,28 +406,44 @@ def move_dummy_objects_to_wd(modified_objects):
     из каталога  dummy
     '''
     logging.debug('========move_dummy_objects_to_wd========')
+    all_dependencies={}
 
     for modified_object in modified_objects:
-        names_list = os.path.basename(modified_object).split('.')
+        names_list = modified_object.split('.')
 
-        #переопределеим элемент для дальнейшего использования
-        modified_object=[modified_object,names_list]
+        if len(names_list)==1:
+            continue #Configuration
 
-        if len(names_list)==2:
-            continue
-        all_dependencies={}
+        # ищем все зависимости в таблице метаданных, и если это не ссылка на самого себя - пишем в список
         for dependencie in list([it['dependencies'] for it in meta_table_list if it['name']==names_list[1]])[0]: #todo: заменить на что-то эту жесть
-            all_dependencies[dependencie]=None
+            if not dependencie in modified_object:
+                all_dependencies[dependencie]=None
 
-        for dependencie in all_dependencies.keys():
-            part_list=dependencie.split('.')
-            dummy_name = part_list[0].replace('Ref','')\
-                         +'.'+ part_list[1]\
-                         +'.xml'
-            shutil.copy(parametrs['dummy_text_catalog']+'\\'+dummy_name,parametrs['work_catalog']+'\\'+dummy_name)
-            logging.debug('copy '+dummy_name+' to '+parametrs['work_catalog'])
+    for dependencie in all_dependencies.keys():
+        # некоторые файлы придется оболванивать вручную, они будут храниться в другом каталоге, чтобы не затираться
+        if dependencie in parametrs['dummy_exceptions_list']:
+            source_catalog=parametrs['exceptions_text_catalog']
+        else:
+            source_catalog=parametrs['dummy_text_catalog']
 
-def cat_configuration_xml(modified_objects):
+        part_list=dependencie.split('.')
+        dummy_name = part_list[0].replace('Ref','')\
+                     +'.'+ part_list[1]\
+                     +'.xml'
+        shutil.copy(source_catalog+'\\'+dummy_name,parametrs['work_catalog']+'\\'+dummy_name)
+        logging.debug('copy '+source_catalog+'\\'+dummy_name+' to '+parametrs['work_catalog'])
+
+        #если есть файл с предопределенными элементами - копируем и его
+        #todo: сделать копирование только по ссылкам
+        predefined_name = parametrs['full_text_catalog']+'\\'+dummy_name.replace('.xml','.Predefined.xml')
+        if os.path.exists(predefined_name):
+            predefined_new_name = predefined_name.replace(parametrs['full_text_catalog'],parametrs['work_catalog'])
+            shutil.copy(predefined_name,predefined_new_name)
+            logging.debug('copy '+predefined_name+' to '+predefined_new_name)
+
+    return all_dependencies.keys()
+
+def cat_configuration_xml(modified_objects,all_dependencies):
     '''
     удаляет из узла ChildObjects файла Configuration.xml все, кроме нужных:
     измененных объектов и зависящих от них,
@@ -404,17 +459,42 @@ def cat_configuration_xml(modified_objects):
     substitute_string = '<ChildObjects>\n'
 
     for modified_object in modified_objects:
-        names_list = os.path.basename(modified_object).split('.')
-        if len(names_list)==2:
+        names_list = modified_object.split('.')
+        if len(names_list)==1:
             continue
+            #Configuration
+
+        node_type=names_list[0]
+        node_text=names_list[1]
+        substitute_string = substitute_string+'\t\t\t<'+node_type+'>'+node_text+'</'+node_type+'>\n'
+
+    for dependency in all_dependencies:
+        names_list = dependency.split('.')
         node_type=names_list[0].replace('Ref','')
         node_text=names_list[1]
         substitute_string = substitute_string+'\t\t\t<'+node_type+'>'+node_text+'</'+node_type+'>\n'
+
+
     substitute_string=substitute_string+'\t\t</ChildObjects>\n'
+
+    file_str = file_str.replace(find_res.group(),substitute_string)
 
     logging.debug('replace ChildObjects with '+substitute_string)
 
-    file_str = file_str.replace(find_res.group(),substitute_string)
+    unwanted_nodes = ['DefaultReportForm',
+                      'DefaultReportVariantForm',
+                      'DefaultReportSettingsForm',
+                      'DefaultDynamicListSettingsForm',
+                      'DefaultSearchForm',
+                      'DefaultInterface',
+                      'DefaultStyle',
+                      'DefaultLanguage',
+                      'DefaultRoles']
+    for unwanted_node in unwanted_nodes:
+        find_res = re.search('<'+unwanted_node+'>.*</'+unwanted_node+'>',file_str,re.DOTALL)  #TODO: заменить грамотной записью xml!!
+        if not find_res is None:
+            file_str = file_str.replace(find_res.group(),'<'+unwanted_node+'/>')
+
 
     with open(parametrs['work_catalog']+'\\Configuration.xml','w',-1,'UTF-8') as res_file:
         res_file.write(file_str)
@@ -446,7 +526,7 @@ def dots2folders(source_catalog,destination_catalog,files_list=None):
         elif parametrs['how_to_copy']=='cmp':
             if not os.path.exists(full_new_name) or not filecmp.cmp(dot_file,full_new_name):
                 shutil.copy(dot_file,full_new_name)
-                logging.debug('Копируем из '+dot_file+' в '+full_new_name)
+                #logging.debug('Копируем из '+dot_file+' в '+full_new_name)
         elif parametrs['how_to_copy']=='hash':
             if not os.path.exists(full_new_name):
                 shutil.copy(dot_file,full_new_name)
@@ -503,8 +583,7 @@ def get_changed_files_list(modified_objects):
     modified_files = []
     for object_name in modified_objects:
         #работаем с именем файла без расширения
-        short_name = os.path.basename(object_name)[:-4]
-        modified_files.extend(glob.glob(os.path.dirname(object_name)+'\\'+short_name+'*.*'))
+        modified_files.extend(glob.glob(parametrs['full_text_catalog']+'\\'+object_name+'*.*'))
     logging.debug('изменено файлов '+str(len(modified_files)))
     return modified_files
 #-- work with 1C
@@ -562,22 +641,31 @@ def save_1c():
         uuid_dict.update(pickle.load(dump_file))
 
     modified_objects = get_changed_blocks()
+
+    if len(modified_objects) ==0:
+        logging.debug('nothing to export')
+        tell2git_im_free()
+        return
+
     tell2git_im_busy(modified_objects)
 
 
-    if parametrs['full_text_catalog']+'\\Configuration.xml' in modified_objects:
+    if 'Configuration' in modified_objects:
         logging.debug('need full export')
-        full_export()
+        #full_export()
         return
 
     modified_files = get_changed_files_list(modified_objects)
 
+    logging.debug('empty folder '+parametrs['work_catalog'])
+    simply_empty_dir(parametrs['work_catalog'])
+
     move_changed_files_to_wd(modified_files)
 
 
-    move_dummy_objects_to_wd(modified_objects)
+    all_dependencies = move_dummy_objects_to_wd(modified_objects)
 
-    cat_configuration_xml(modified_objects)
+    cat_configuration_xml(modified_objects,all_dependencies)
 
     #import_1c()
 
@@ -604,8 +692,9 @@ def prepare():
     logging.debug('время выполнения сценария - ',datetime.datetime.now() - begin_time)
 
 def test_func():
-
+    full_export()
     save_1c()
+
 #-- big procs
 
 if __name__ == '__main__':
