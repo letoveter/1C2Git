@@ -192,9 +192,9 @@ def read_all_uuid():
         uuid_dict[block[1].text] = conf_xml_name
 
     # если изменены базовые блоки - перечитываем всю конфигурацию
-    uuid_dict['root'] = conf_xml_name
-    uuid_dict['version'] = conf_xml_name
-    uuid_dict['versions'] = conf_xml_name
+    uuid_dict['root'] = ''
+    uuid_dict['version'] = ''
+    uuid_dict['versions'] = ''
 
 
     # считываем зависимые блоки данных (файлы) для каждого объекта конфигурации
@@ -283,23 +283,36 @@ def tell2git_im_busy(message):
 def tell2git_im_free():
 
     mark_filename=os.path.join(parametrs['git_work_catalog'],'1C2Git_export_status.txt')
-    os.remove(mark_filename)
+    try:
+        os.remove(mark_filename)
+        logging.debug('removed '+mark_filename)
+    except:
+        logging.error('can not remove '+mark_filename)
+
 
 
 
 #++ work with db
 
-def copy_configsave():
+def copy_config():
+
     db = connect2db()
     cursor = db.cursor()
+
     try:
         res=cursor.execute('DROP TABLE [' + parametrs['1c_shad_base'] + '].[dbo].[Config]')
+        logging.debug('drop table:'+repr(res.rowcount))
     except:
-        logging.error('drop table error:'+res)
+        logging.error('drop table error:'+repr(res.rowcount))
 
     query_text = '''SELECT * INTO [''' + parametrs['1c_shad_base'] + '''].[dbo].[Config]
     FROM  [''' + parametrs['1c_dev_base'] + '''].[dbo].[Config] '''
-    cursor.execute(query_text)
+    try:
+        res=cursor.execute(query_text)
+        logging.debug('SELECT * INTO:'+repr(res.rowcount))
+    except:
+        logging.error('SELECT * INTO error:'+repr(res.rowcount))
+    db.commit()
     db.close()
 
 def check_uuid_table():
@@ -342,7 +355,6 @@ def get_changed_blocks():
     '''
     logging.debug('========get_changed_blocks========')
 
-    local_begin = datetime.datetime.now()
     res=[]
     db = connect2db()
     cursor = db.cursor()
@@ -351,7 +363,8 @@ def get_changed_blocks():
         FROM ['''+parametrs['1c_dev_base']+'''].[dbo].[Config] as dev
         LEFT JOIN  ['''+parametrs['1c_shad_base']+'''].[dbo].[Config] as shad
         ON dev.FileName = shad.FileName
-        WHERE (dev.Modified - shad.Modified)>1
+        AND dev.PartNo = shad.PartNo
+        WHERE dev.Modified <> shad.Modified
         OR shad.Modified IS NULL'''
         cursor.execute(query_text)
         res = cursor.fetchall()
@@ -362,14 +375,67 @@ def get_changed_blocks():
     finally:
         db.close()
 
-    logging.debug('find blocks-'+str(len(res)))
+    logging.debug('find blocks-'+str(len(res))+'type- '+repr(type(res)))
+    return [x[0] for x in res]
 
+def copy_changed_bloсks(modified_blocks):
+    '''
+    копирует измененные блоки данных из dev в shad
+    '''
+    logging.debug('========copy_changed_bloсks========')
+
+    res=[]
+    db = connect2db()
+    cursor = db.cursor()
+    logging.debug((modified_blocks,type(modified_blocks)))
+    str_list=list_2SQL_list(modified_blocks)
+    try:
+        logging.debug(str_list)
+        res=cursor.execute('DELETE FROM [' + parametrs['1c_shad_base'] + '].[dbo].[ConfigSave]'+' WHERE FileName IN (?)',
+                           str_list)
+        logging.debug('DELETE table:'+repr(res.rowcount))
+    except:
+        logging.error('DELETE table error:'+repr(res.rowcount))
+
+    query_text = '''INSERT INTO [''' + parametrs['1c_shad_base'] + '''].[dbo].[ConfigSave] ([FileName]
+                              ,[Creation]
+                              ,[Modified]
+                              ,[Attributes]
+                              ,[DataSize]
+                              ,[BinaryData]
+                              ,[PartNo])
+                    SELECT [FileName]
+                              ,[Creation]
+                              ,[Modified]
+                              ,[Attributes]
+                              ,[DataSize]
+                              ,[BinaryData]
+                              ,[PartNo]
+                    FROM [1S-MSK-4Git-DEV].[dbo].[Config] AS dev
+                        WHERE dev.FileName IN (?)'''
+    try:
+        res=cursor.execute(query_text,str_list)
+        logging.debug('SELECT * INTO:'+repr(res.rowcount))
+    except:
+        logging.error('SELECT * INTO error:'+repr(res.rowcount))
+    db.commit()
+    db.close()
+
+def list_2SQL_list(items):
+    sqllist = "\'"+"\',\'".join(items)+"\'"
+    return sqllist
+
+def get_changed_objects(changed_blocks):
+
+    local_begin = datetime.datetime.now()
     modified_objects=[]
     not_found_objects = []
-    for i in res:
-        object_name=uuid_dict.get(i[0],uuid_dict.get(i[0][:36],None))
+    for i in changed_blocks:
+        object_name=uuid_dict.get(i,uuid_dict.get(i[:36],None))
         if object_name is  None:
-            not_found_objects.append(i[0])
+            not_found_objects.append(i)
+        elif    object_name == '':
+            pass #todo: отбрасываем незначащие типа versions: проверить
         else:
             short_object_name = os.path.basename(object_name)[:-4]
             if not short_object_name in modified_objects:
@@ -507,7 +573,10 @@ def dots2folders(source_catalog,destination_catalog,files_list=None):
     превращается в C:\Buh_korp\ChartOfCalculationTypes\Удержания\Form\ФормаСписка\Form\Module.txt
     """
     #todo: использовать список файлов
-    all_dot_files=glob.glob(source_catalog+'\\*.*')
+    if files_list==None:
+        all_dot_files=glob.glob(source_catalog+'\\*.*')
+    else:
+        all_dot_files=files_list
 
     for dot_file in all_dot_files:
         file_parts_list = os.path.basename(dot_file).split('.')
@@ -550,10 +619,13 @@ def import_1c():
     Загружает конфигурацию 1С из файлов рабочего каталога
     '''
     logging.debug('========import_1c========')
+    logging.debug('+'+parametrs['work_catalog'])
     status = os.system(parametrs['1c_starter']
             +' DESIGNER /S'+parametrs['1c_server']+'\\'+parametrs['1c_shad_base']
             +' /N'+parametrs['1c_shad_login']+' /P'+parametrs['1c_shad_pass']
-            +' /LoadConfigFiles'+parametrs['full_text_catalog'])
+            +' /LoadConfigFromFiles'+parametrs['work_catalog']
+            +' /Visible'
+            +' /out'+get_param('log_folder')+'\\import_log.txt')
 
     logging.debug('import status-'+repr(status))
 
@@ -565,14 +637,12 @@ def export_1c():
     status = os.system(parametrs['1c_starter']
             +' DESIGNER /S'+parametrs['1c_server']+'\\'+parametrs['1c_shad_base']
             +' /N'+parametrs['1c_shad_login']+' /P'+parametrs['1c_shad_pass']
-            +' /DumpConfigToFiles '+parametrs['full_text_catalog']
+            +' /DumpConfigToFiles '+parametrs['work_catalog']
             +' /out'+get_param('log_folder')+'\\export_log.txt')
     logging.debug('export status-'+repr(status))
 
-def copy_changed_bloсks():
-    '''
 
-    '''
+
 
 def get_changed_files_list(modified_objects):
     '''
@@ -604,7 +674,7 @@ def full_export():
 
 
     logging.debug('полностью копируем таблицу configsave в тень')
-    copy_configsave()
+    copy_config()
 
 
 
@@ -640,7 +710,8 @@ def save_1c():
     with open('uuid_dict.dat', 'rb') as dump_file:
         uuid_dict.update(pickle.load(dump_file))
 
-    modified_objects = get_changed_blocks()
+    modified_blocks = get_changed_blocks()
+    modified_objects = get_changed_objects(modified_blocks)
 
     if len(modified_objects) ==0:
         logging.debug('nothing to export')
@@ -651,7 +722,7 @@ def save_1c():
 
 
     if 'Configuration' in modified_objects:
-        logging.debug('need full export')
+        logging.debug('need full export:'+repr(modified_objects) )
         #full_export()
         return
 
@@ -667,11 +738,11 @@ def save_1c():
 
     cat_configuration_xml(modified_objects,all_dependencies)
 
-    #import_1c()
+    import_1c()
 
-    copy_changed_bloсks()
+    copy_changed_bloсks(modified_blocks)
 
-    #export_1c()
+    export_1c()
 
     dots2folders(parametrs['work_catalog'],parametrs['git_work_catalog'],modified_files)
 
@@ -692,8 +763,9 @@ def prepare():
     logging.debug('время выполнения сценария - ',datetime.datetime.now() - begin_time)
 
 def test_func():
-    full_export()
+    #full_export()
     save_1c()
+    #import_1c()
 
 #-- big procs
 
