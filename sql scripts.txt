@@ -1,0 +1,19 @@
+синхронизация тни с разработкой
+DELETE FROM [1S-MSK-4Git-empty].[dbo].[ConfigSave]
+DELETE FROM [1S-MSK-4Git-empty].[dbo].[Config]
+GO
+	INSERT INTO [1S-MSK-4Git-empty].[dbo].[Config] ([FileName]
+                              ,[Creation]
+                              ,[Modified]
+                              ,[Attributes]
+                              ,[DataSize]
+                              ,[BinaryData]
+                              ,[PartNo])
+                    SELECT [FileName]
+                              ,[Creation]
+                              ,[Modified]
+                              ,[Attributes]
+                              ,[DataSize]
+                              ,[BinaryData]
+                              ,[PartNo]
+                    FROM [1S-MSK-4Git-DEV].[dbo].[Config] 
