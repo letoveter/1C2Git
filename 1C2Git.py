@@ -368,7 +368,6 @@ def get_changed_blocks():
         OR shad.Modified IS NULL'''
         cursor.execute(query_text)
         res = cursor.fetchall()
-        #todo: WHERE (dev.Modified - shad.Modified)>1 - костыль, при копировании таблицы появляется секунда из ниоткуда
 
     except:
         logging.error('Error get_changed_blocks: ',query_text)
@@ -387,16 +386,10 @@ def copy_changed_bloсks(modified_blocks):
     res=[]
     db = connect2db()
     cursor = db.cursor()
-    logging.debug((modified_blocks,type(modified_blocks)))
-    str_list=list_2SQL_list(modified_blocks)
-    try:
-        logging.debug(str_list)
-        res=cursor.execute('DELETE FROM [' + parametrs['1c_shad_base'] + '].[dbo].[ConfigSave]'+' WHERE FileName IN (?)',
-                           str_list)
-        logging.debug('DELETE table:'+repr(res.rowcount))
-    except:
-        logging.error('DELETE table error:'+repr(res.rowcount))
 
+
+    logging.debug((modified_blocks,type(modified_blocks)))
+    str_list = list_2SQL_list(modified_blocks)
     query_text = '''INSERT INTO [''' + parametrs['1c_shad_base'] + '''].[dbo].[ConfigSave] ([FileName]
                               ,[Creation]
                               ,[Modified]
@@ -411,14 +404,17 @@ def copy_changed_bloсks(modified_blocks):
                               ,[DataSize]
                               ,[BinaryData]
                               ,[PartNo]
-                    FROM [1S-MSK-4Git-DEV].[dbo].[Config] AS dev
-                        WHERE dev.FileName IN (?)'''
+                    FROM [''' + parametrs['1c_dev_base'] + '''].[dbo].[Config] AS dev
+                        WHERE dev.FileName IN ('''+str_list+''')'''
     try:
-        res=cursor.execute(query_text,str_list)
+        res=cursor.execute('DELETE FROM [' + parametrs['1c_shad_base'] + '].[dbo].[ConfigSave] WHERE FileName IN ('+str_list+')')
+        logging.debug('DELETE table:'+repr(res.rowcount))
+        res2=cursor.execute(query_text)
         logging.debug('SELECT * INTO:'+repr(res.rowcount))
+        db.commit()
     except:
-        logging.error('SELECT * INTO error:'+repr(res.rowcount))
-    db.commit()
+        logging.error('DELETE and insert table error:'+repr(res.rowcount)+repr(res2.rowcount))
+
     db.close()
 
 def list_2SQL_list(items):
@@ -572,11 +568,14 @@ def dots2folders(source_catalog,destination_catalog,files_list=None):
     C:\1C2Git_files\full_text\ChartOfCalculationTypes.Удержания.Form.ФормаСписка.Form.Module.txt
     превращается в C:\Buh_korp\ChartOfCalculationTypes\Удержания\Form\ФормаСписка\Form\Module.txt
     """
-    #todo: использовать список файлов
+    logging.debug('========dots2folders========')
+
     if files_list==None:
         all_dot_files=glob.glob(source_catalog+'\\*.*')
     else:
-        all_dot_files=files_list
+        all_dot_files=[source_catalog+'\\'+os.path.basename(x) for x in files_list]
+
+    logging.debug(all_dot_files)
 
     for dot_file in all_dot_files:
         file_parts_list = os.path.basename(dot_file).split('.')
@@ -588,19 +587,23 @@ def dots2folders(source_catalog,destination_catalog,files_list=None):
         #соединим вместе новое место назначения и левую часть названия файла, оставив только последнее имя и расширение
         if not os.path.exists(new_catalog):
             os.makedirs(new_catalog)
+            logging.debug('created '+new_catalog)
 
         # а если нет параметра?
         if parametrs['how_to_copy']=='dummy':
             shutil.copy(dot_file,full_new_name)
+            logging.debug('Копируем из '+dot_file+' в '+full_new_name)
         elif parametrs['how_to_copy']=='cmp':
             if not os.path.exists(full_new_name) or not filecmp.cmp(dot_file,full_new_name):
                 shutil.copy(dot_file,full_new_name)
-                #logging.debug('Копируем из '+dot_file+' в '+full_new_name)
+                logging.debug('Копируем из '+dot_file+' в '+full_new_name)
         elif parametrs['how_to_copy']=='hash':
             if not os.path.exists(full_new_name):
                 shutil.copy(dot_file,full_new_name)
+                logging.debug('Копируем из '+dot_file+' в '+full_new_name)
             else:
                 with open(dot_file, 'rb') as f:
+                    #todo: доделать механизм хеширования
                     file1_hash = hashlib.sha1(f.read()).hexdigest()
                 #with open(full_new_name, 'rb') as f:
                     #file2_hash = hashlib.sha1(f.read()).hexdigest()
