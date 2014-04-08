@@ -377,7 +377,7 @@ def get_changed_blocks():
     logging.debug('find blocks-'+str(len(res))+'type- '+repr(type(res)))
     return [x[0] for x in res]
 
-def copy_changed_bloсks(modified_blocks):
+def copy_changed_bloсks(source_table, dest_table, modified_blocks):
     '''
     копирует измененные блоки данных из dev в shad
     '''
@@ -390,7 +390,9 @@ def copy_changed_bloсks(modified_blocks):
 
     logging.debug((modified_blocks,type(modified_blocks)))
     str_list = list_2SQL_list(modified_blocks)
-    query_text = '''INSERT INTO [''' + parametrs['1c_shad_base'] + '''].[dbo].[ConfigSave] ([FileName]
+    delete_text = 'DELETE FROM ' + dest_table + ' WHERE FileName IN ('+str_list+')'
+    insert_text = '''INSERT INTO '''+dest_table+'''
+                            ([FileName]
                               ,[Creation]
                               ,[Modified]
                               ,[Attributes]
@@ -404,16 +406,17 @@ def copy_changed_bloсks(modified_blocks):
                               ,[DataSize]
                               ,[BinaryData]
                               ,[PartNo]
-                    FROM [''' + parametrs['1c_dev_base'] + '''].[dbo].[Config] AS dev
-                        WHERE dev.FileName IN ('''+str_list+''')'''
+                    FROM ''' + source_table + ''' AS dev
+                    WHERE dev.FileName IN ('''+str_list+''')'''
+
     try:
-        res=cursor.execute('DELETE FROM [' + parametrs['1c_shad_base'] + '].[dbo].[ConfigSave] WHERE FileName IN ('+str_list+')')
-        logging.debug('DELETE table:'+repr(res.rowcount))
-        res2=cursor.execute(query_text)
-        logging.debug('SELECT * INTO:'+repr(res.rowcount))
+        res=cursor.execute(delete_text)
+        logging.debug('Deleted :'+repr(res.rowcount))
+        res2=cursor.execute(insert_text)
+        logging.debug('Inserted :'+repr(res.rowcount))
         db.commit()
     except:
-        logging.error('DELETE and insert table error:'+repr(res.rowcount)+repr(res2.rowcount))
+        logging.error('Delete and insert table error:')
 
     db.close()
 
@@ -505,6 +508,13 @@ def move_dummy_objects_to_wd(modified_objects):
 
     return all_dependencies.keys()
 
+def move_always_included():
+    logging.debug('========move_always_included========')
+    for file in glob.glob(parametrs['always_included_folder']+'\\*.*'):
+        shutil.copy(file,parametrs['work_catalog'])
+
+
+
 def cat_configuration_xml(modified_objects,all_dependencies):
     '''
     удаляет из узла ChildObjects файла Configuration.xml все, кроме нужных:
@@ -519,6 +529,8 @@ def cat_configuration_xml(modified_objects,all_dependencies):
     find_res = re.search('<ChildObjects>.*</ChildObjects>', file_str, re.DOTALL)
 
     substitute_string = '<ChildObjects>\n'
+    substitute_string += parametrs['conf_always_included']+'\n'
+    #todo: сделать стили через зависимости
 
     for modified_object in modified_objects:
         names_list = modified_object.split('.')
@@ -534,7 +546,9 @@ def cat_configuration_xml(modified_objects,all_dependencies):
         names_list = dependency.split('.')
         node_type=names_list[0].replace('Ref','')
         node_text=names_list[1]
-        substitute_string = substitute_string+'\t\t\t<'+node_type+'>'+node_text+'</'+node_type+'>\n'
+        string_to_add = '<'+node_type+'>'+node_text+'</'+node_type+'>'
+        if not string_to_add in substitute_string:
+            substitute_string += '\t\t\t'+string_to_add+'\n'
 
 
     substitute_string=substitute_string+'\t\t</ChildObjects>\n'
@@ -622,6 +636,7 @@ def import_1c():
     Загружает конфигурацию 1С из файлов рабочего каталога
     '''
     logging.debug('========import_1c========')
+    begin_time = datetime.datetime.now()
     logging.debug('+'+parametrs['work_catalog'])
     status = os.system(parametrs['1c_starter']
             +' DESIGNER /S'+parametrs['1c_server']+'\\'+parametrs['1c_shad_base']
@@ -631,19 +646,25 @@ def import_1c():
             +' /out'+get_param('log_folder')+'\\import_log.txt')
 
     logging.debug('import status-'+repr(status))
+    logging.debug('time of import_1c - '+str(datetime.datetime.now() - begin_time))
+
+    assert status==0 , 'fail to import files to 1C'
 
 def export_1c():
     '''
     Выгружает конфигурацию 1С в файлы рабочего каталога
     '''
     logging.debug('========export_1c========')
+    begin_time = datetime.datetime.now()
     status = os.system(parametrs['1c_starter']
             +' DESIGNER /S'+parametrs['1c_server']+'\\'+parametrs['1c_shad_base']
             +' /N'+parametrs['1c_shad_login']+' /P'+parametrs['1c_shad_pass']
             +' /DumpConfigToFiles '+parametrs['work_catalog']
             +' /out'+get_param('log_folder')+'\\export_log.txt')
     logging.debug('export status-'+repr(status))
+    logging.debug('time of export_1c - '+str(datetime.datetime.now() - begin_time))
 
+    assert status==0 , 'fail to export files from 1C'
 
 
 
@@ -736,6 +757,7 @@ def save_1c():
 
     move_changed_files_to_wd(modified_files)
 
+    move_always_included()
 
     all_dependencies = move_dummy_objects_to_wd(modified_objects)
 
@@ -743,11 +765,17 @@ def save_1c():
 
     import_1c()
 
-    copy_changed_bloсks(modified_blocks)
+    copy_changed_bloсks('['+parametrs['1c_dev_base'] + '].[dbo].[Config]',
+                        '['+parametrs['1c_shad_base'] + '].[dbo].[ConfigSave]',
+                        modified_blocks)
 
     export_1c()
 
     dots2folders(parametrs['work_catalog'],parametrs['git_work_catalog'],modified_files)
+
+    copy_changed_bloсks('['+parametrs['1c_shad_base'] + '].[dbo].[ConfigSave]',
+                        '['+parametrs['1c_shad_base'] + '].[dbo].[Config]',
+                        modified_blocks)
 
     tell2git_im_free()
 
