@@ -76,6 +76,8 @@ def read_meta_table():
 	словарь meta_table_dict с значениями-списками объектов метаданных
 	и список meta_table_list содержащий словари
     """
+    logging.debug('========read_meta_table========')
+    begin_time = datetime.datetime.now()
 
     conf_xml_name = parametrs['full_text_catalog'] + '\Configuration.xml'
     conf_xml_tree = etree.parse(conf_xml_name)
@@ -119,6 +121,7 @@ def read_meta_table():
     read_meta_object(children_objects, 'ChartOfCalculationTypes')
 
     logging.debug('Прочитано объектов '+str(len(meta_table_list)))
+    logging.debug('время выполнения read_meta_table - '+str(datetime.datetime.now() - begin_time))
 
 def read_oblect_uuid_and_dependencies(metadata_item):
     """
@@ -153,16 +156,38 @@ def read_oblect_uuid_and_dependencies(metadata_item):
 
     # заполняем таблицу зависимостей
     dep_list=[]
+
+    #из основного описания объекта выбираем типы
     for attribute_node in root.findall('.//{http://v8.1c.ru/8.1/data/core}Type'):
         if attribute_node.text[:3]=='cfg' and not attribute_node.text == 'cfg:'+metadata_item['type'] + 'Ref.' + metadata_item['name']:
-           dep_list.append(attribute_node.text[4:].replace('Ref',''))
+            dep_list.append(attribute_node.text[4:].replace('Ref',''))
 
+    #еще нам интересны ссылки из from
     for from_node in root.findall('.//*[@from]'):
         names_list = from_node.attrib['from'].split('.')
         dep_name= names_list[0]+'.'+names_list[1]
         if not dep_name in dep_list:
             dep_list.append(dep_name)
-            #logging.debug('extract '+dep_name+' from '+repr(from_node))
+
+    #теперь придется перебрать все зависимые файлы и вытащить оттуда ссылки
+    depended_files_list = glob.glob(parametrs['full_text_catalog'] + '\\' + metadata_item['type'] + '.' + metadata_item[
+        'name'] + '*.xml')
+    for depended_file in depended_files_list:
+        depended_file_tree = etree.parse(depended_file)
+        depended_root = depended_file_tree.getroot()
+        #Выдергиваем ссылки
+        ref_list = list([x.text[4:].replace('Ref','')
+                        for x in  depended_root.findall('.//{http://v8.1c.ru/8.1/data/core}Type')
+                        if x.text[:3]=='cfg' and not x.text == 'cfg:'+metadata_item['type'] + 'Ref.' + metadata_item['name']])
+        if not len(ref_list)==0: dep_list.extend(ref_list)
+
+        #выдергиваем роли
+        role_list = list([x.attrib['name'] for x in depended_root.findall('.//*[@name]')if 'Role' in x.attrib['name']])
+        if not len(role_list)==0: dep_list.extend(role_list)
+
+        #Функциональные опции
+        fops_list = list([x.text for x in depended_root.findall('.//{http://v8.1c.ru/8.3/xcf/logform}FunctionalOptions/*')])
+        if not len(fops_list)==0: dep_list.extend(fops_list)
 
     metadata_item['dependencies']=dep_list
 
@@ -177,6 +202,13 @@ def get_file_uuid(file_name):
         return None
 
 def read_all_uuid():
+    '''
+    считывает uuid из xml-файлов, для понимания того, к какому объекту принадлежит ггшв
+    filename в  таблицах config и configsave = uuid в xml-файлах
+    '''
+
+    logging.debug('========read_all_uuid========')
+    begin_time = datetime.datetime.now()
 
     # считываем корень конфигурации
     conf_xml_name = parametrs['full_text_catalog'] + '\Configuration.xml'
@@ -218,10 +250,12 @@ def read_all_uuid():
                 logging.error('Не найден в get_file_uuid файл '+repr(one_subsystem_file))
 
     logging.debug('размер uuid_dict-'+str(len(uuid_dict)))
+    logging.debug('время выполнения read_all_uuid - '+str(datetime.datetime.now() - begin_time))
 
 def fill_dummy_catalog():
 
     logging.debug('========fill_dummy_catalog========')
+    begin_time=datetime.datetime.now()
     for meta_object in meta_table_list:
 
 
@@ -249,16 +283,18 @@ def fill_dummy_catalog():
                                   'RegisterRecords',
                                   'Characteristics',
                                   'Type',
-                                  'CharacteristicExtValues']
+                                  'CharacteristicExtValues',
+                                  'Location',
+                                  'Content']
 
             for unwanted_node in unwanted_nodes:
                 find_res = re.search('<'+unwanted_node+'>.*</'+unwanted_node+'>',file_str,re.DOTALL)  #TODO: заменить грамотной записью xml!!
                 if not find_res is None:
                     file_str = file_str.replace(find_res.group(),'<'+unwanted_node+'/>')
-                    string_was_changed = True
 
             data_file=open(object_new_file_name,'w',-1,'UTF-8')
             data_file.write(file_str)
+    logging.debug('время выполнения fill_dummy_catalog - '+str(datetime.datetime.now() - begin_time))
 
 
 
@@ -296,24 +332,35 @@ def tell2git_im_free():
 
 def copy_config():
 
+
+    logging.debug('========copy_config========')
+    begin_time = datetime.datetime.now()
     db = connect2db()
     cursor = db.cursor()
 
     try:
-        res=cursor.execute('DROP TABLE [' + parametrs['1c_shad_base'] + '].[dbo].[Config]')
-        logging.debug('drop table:'+repr(res.rowcount))
+        res=cursor.execute('DELETE FROM [' + parametrs['1c_shad_base'] + '].[dbo].[Config]')
+        logging.debug('drop table Config:'+repr(res))
     except:
-        logging.error('drop table error:'+repr(res.rowcount))
+        logging.error('drop table Config error:'+repr(res))
+
+    try:
+        res=cursor.execute('DELETE FROM [' + parametrs['1c_shad_base'] + '].[dbo].[ConfigSave]')
+        logging.debug('drop table ConfigSave rowcount:'+repr(res.rowcount))
+    except:
+        logging.error('drop table ConfigSave error:'+repr(res))
 
     query_text = '''SELECT * INTO [''' + parametrs['1c_shad_base'] + '''].[dbo].[Config]
     FROM  [''' + parametrs['1c_dev_base'] + '''].[dbo].[Config] '''
     try:
         res=cursor.execute(query_text)
-        logging.debug('SELECT * INTO:'+repr(res.rowcount))
+        logging.debug('SELECT * INTO Config:'+repr(res.rowcount))
     except:
-        logging.error('SELECT * INTO error:'+repr(res.rowcount))
+        logging.error('SELECT * INTO Config error:'+repr(res.rowcount))
+
     db.commit()
     db.close()
+    logging.debug('время выполнения copy_config - '+str(datetime.datetime.now() - begin_time))
 
 def check_uuid_table():
     #ищем потерянные uuid по базе данных
@@ -388,7 +435,6 @@ def copy_changed_bloсks(source_table, dest_table, modified_blocks):
     cursor = db.cursor()
 
 
-    logging.debug((modified_blocks,type(modified_blocks)))
     str_list = list_2SQL_list(modified_blocks)
     delete_text = 'DELETE FROM ' + dest_table + ' WHERE FileName IN ('+str_list+')'
     insert_text = '''INSERT INTO '''+dest_table+'''
@@ -443,8 +489,11 @@ def get_changed_objects(changed_blocks):
     logging.debug('modified_objects-'+str(len(modified_objects)))
     logging.debug('not_found_objects-'+str(len(not_found_objects)))
 
-    assert len(not_found_objects)==0,\
-        'Не все объекты найдены в таблице ссылок ('+str(len(not_found_objects))+', пример: '+not_found_objects[0]+')'
+    # assert len(not_found_objects)==0,\
+    #     'Не все объекты найдены в таблице ссылок ('+str(len(not_found_objects))+', пример: '+not_found_objects[0]+')'
+    if not len(not_found_objects)==0:
+        logging.error('found unknown blocks. need to update uuid:'+str(len(not_found_objects)))
+
 
     logging.debug('время выполнения get_changed_blocks - '+str(datetime.datetime.now() - local_begin))
 
@@ -480,21 +529,24 @@ def move_dummy_objects_to_wd(modified_objects):
             continue #Configuration
 
         # ищем все зависимости в таблице метаданных, и если это не ссылка на самого себя - пишем в список
-        for dependencie in list([it['dependencies'] for it in meta_table_list if it['name']==names_list[1]])[0]: #todo: заменить на что-то эту жесть
-            if not dependencie in modified_object:
-                all_dependencies[dependencie]=None
+        for dependency in list([it['dependencies'] for it in meta_table_list if (it['name']==names_list[1] and it['type']==names_list[0])])[0]: #todo: заменить на что-то эту жесть
+            try:
+                if not dependency in modified_object: #todo: сделать более грамотную систему проверки пересечений dummy и modified objects
+                    all_dependencies[dependency]=None
+            except:
+                logging.error("error to read dependency: "+repr(dependency)+'='+repr(modified_object))
 
-    for dependencie in all_dependencies.keys():
+    logging.debug('all_dependencies '+repr(all_dependencies.keys()))
+    #dependency - строка вида "Catalog.Банки"
+    for dependency in all_dependencies.keys():
         # некоторые файлы придется оболванивать вручную, они будут храниться в другом каталоге, чтобы не затираться
-        if dependencie in parametrs['dummy_exceptions_list']:
+        #пример такого файла - Catalog.НаборыДополнительныхРеквизитовИСведений
+        if dependency in parametrs['dummy_exceptions_list']:
             source_catalog=parametrs['exceptions_text_catalog']
         else:
             source_catalog=parametrs['dummy_text_catalog']
 
-        part_list=dependencie.split('.')
-        dummy_name = part_list[0].replace('Ref','')\
-                     +'.'+ part_list[1]\
-                     +'.xml'
+        dummy_name = dependency+'.xml'
         shutil.copy(source_catalog+'\\'+dummy_name,parametrs['work_catalog']+'\\'+dummy_name)
         logging.debug('copy '+source_catalog+'\\'+dummy_name+' to '+parametrs['work_catalog'])
 
@@ -529,7 +581,7 @@ def cat_configuration_xml(modified_objects,all_dependencies):
     find_res = re.search('<ChildObjects>.*</ChildObjects>', file_str, re.DOTALL)
 
     substitute_string = '<ChildObjects>\n'
-    substitute_string += parametrs['conf_always_included']+'\n'
+    substitute_string += parametrs.get('conf_always_included','')+'\n'
     #todo: сделать стили через зависимости
 
     for modified_object in modified_objects:
@@ -583,13 +635,13 @@ def dots2folders(source_catalog,destination_catalog,files_list=None):
     превращается в C:\Buh_korp\ChartOfCalculationTypes\Удержания\Form\ФормаСписка\Form\Module.txt
     """
     logging.debug('========dots2folders========')
+    begin_time = datetime.datetime.now()
 
     if files_list==None:
         all_dot_files=glob.glob(source_catalog+'\\*.*')
     else:
         all_dot_files=[source_catalog+'\\'+os.path.basename(x) for x in files_list]
 
-    logging.debug(all_dot_files)
 
     for dot_file in all_dot_files:
         file_parts_list = os.path.basename(dot_file).split('.')
@@ -606,15 +658,15 @@ def dots2folders(source_catalog,destination_catalog,files_list=None):
         # а если нет параметра?
         if parametrs['how_to_copy']=='dummy':
             shutil.copy(dot_file,full_new_name)
-            logging.debug('Копируем из '+dot_file+' в '+full_new_name)
+            if not files_list==None: logging.debug('Копируем из '+dot_file+' в '+full_new_name)
         elif parametrs['how_to_copy']=='cmp':
             if not os.path.exists(full_new_name) or not filecmp.cmp(dot_file,full_new_name):
                 shutil.copy(dot_file,full_new_name)
-                logging.debug('Копируем из '+dot_file+' в '+full_new_name)
+                if not files_list==None: logging.debug('Копируем из '+dot_file+' в '+full_new_name)
         elif parametrs['how_to_copy']=='hash':
             if not os.path.exists(full_new_name):
                 shutil.copy(dot_file,full_new_name)
-                logging.debug('Копируем из '+dot_file+' в '+full_new_name)
+                if not files_list==None: logging.debug('Копируем из '+dot_file+' в '+full_new_name)
             else:
                 with open(dot_file, 'rb') as f:
                     #todo: доделать механизм хеширования
@@ -628,6 +680,7 @@ def dots2folders(source_catalog,destination_catalog,files_list=None):
 
         else:
             raise Exception("не заполнена настройка how_to_copy")
+    logging.debug('время выполнения dots2folders - '+str(datetime.datetime.now() - begin_time))
 
 #++ work with 1C
 
@@ -648,7 +701,12 @@ def import_1c():
     logging.debug('import status-'+repr(status))
     logging.debug('time of import_1c - '+str(datetime.datetime.now() - begin_time))
 
-    assert status==0 , 'fail to import files to 1C'
+    try:
+        output_str = open(get_param('log_folder')+'\\import_log.txt').read()
+    except:
+        output_str = ''
+
+    assert status==0 , 'fail to import files to 1C: '+output_str
 
 def export_1c():
     '''
@@ -664,7 +722,11 @@ def export_1c():
     logging.debug('export status-'+repr(status))
     logging.debug('time of export_1c - '+str(datetime.datetime.now() - begin_time))
 
-    assert status==0 , 'fail to export files from 1C'
+    try:
+        output_str = open(get_param('log_folder')+'\\export_log.txt').read()
+    except:
+        output_str = ''
+    assert status==0 , 'fail to export files from 1C: '+output_str
 
 
 
@@ -673,6 +735,7 @@ def get_changed_files_list(modified_objects):
     возвращает список измененных файлов по списку объектов
     '''
     logging.debug('========get_changed_files_list========')
+    begin_time = datetime.datetime.now()
 
     modified_files = []
     for object_name in modified_objects:
@@ -689,7 +752,6 @@ def full_export():
     запускает полную выгрузку 1С в файлы
     '''
     logging.debug('========full_export========')
-
     begin_time = datetime.datetime.now()
 
 
@@ -703,7 +765,7 @@ def full_export():
 
 
     logging.debug('запускаем 1с с командой “Выгрузить файлы”')
-    #export_1c()
+    export_1c()
 
     logging.debug('разбираем выгруженные файлы по папкам')
     dots2folders(parametrs['full_text_catalog'],parametrs['git_work_catalog'])
@@ -726,6 +788,7 @@ def save_1c():
     '''
     logging.debug('========save_1c========')
     begin_time = datetime.datetime.now()
+
     tell2git_im_busy('проводится частичная выгрузка конфигурации')
 
     with open('meta_table_list.dat', 'rb') as dump_file:
@@ -746,7 +809,7 @@ def save_1c():
 
 
     if 'Configuration' in modified_objects:
-        logging.debug('need full export:'+repr(modified_objects) )
+        logging.debug('need full export:'+len(modified_objects) )
         #full_export()
         return
 
@@ -779,7 +842,7 @@ def save_1c():
 
     tell2git_im_free()
 
-    logging.debug('время выполнения сценария - '+str(datetime.datetime.now() - begin_time))
+    logging.debug('время выполнения save_1c - '+str(datetime.datetime.now() - begin_time))
 
 def prepare():
 
@@ -797,6 +860,10 @@ def test_func():
     #full_export()
     save_1c()
     #import_1c()
+    '''with open('meta_table_list.dat', 'rb') as dump_file:
+        meta_table_list.extend(pickle.load(dump_file))
+    v=[x for x in meta_table_list if x['name']=='ВариантыОтчетов']
+    print(v)'''
 
 #-- big procs
 
