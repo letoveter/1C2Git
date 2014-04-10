@@ -874,15 +874,15 @@ if __name__ == '__main__':
 
     read_ini_file()
 
-    #operation = sys.argv[1]
-
-    #if operation == '-s':
-    #save_1c()
-
-    #elif operation=='-sa':
-    #full_export()
-
-    test_func()
+    if len(sys.argv) == 1:
+        test_func()
+    elif sys.argv[1] == '-s': #save
+       save_1c()
+    elif sys.argv[1] == '-sa ': #save all
+        full_export()
+    else:
+        logging.error('wrong parametr '+sys.argv[1])
+    
 
 
 
