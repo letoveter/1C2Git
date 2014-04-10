@@ -1,4 +1,4 @@
-синхронизация тни с разработкой
+﻿синхронизация тени с разработкой
 DELETE FROM [1S-MSK-4Git-empty].[dbo].[ConfigSave]
 DELETE FROM [1S-MSK-4Git-empty].[dbo].[Config]
 GO

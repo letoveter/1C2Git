@@ -29,7 +29,7 @@ def read_ini_file():
 	1C2Git.cfg не коммитится!!
 	"""
     config_raw = configparser.ConfigParser()
-    config_raw.read('1C2Git.cfg','UTF-8')
+    config_raw.read('C:\\1CUnit\\1C2Git\\1C2Git.cfg','UTF-8') #todo: раскостылить
     for section in config_raw.sections():
         for parametr in config_raw.items(section):
             if parametr[0][-4:]=='list':
@@ -144,18 +144,18 @@ def read_oblect_uuid_and_dependencies(metadata_item):
             'name'] + '.Form.' + form_element.text + '.xml'
         uuid_dict[get_file_uuid(file_name)] = file_name
 
-    template_elements =  root.findall('.//{http://v8.1c.ru/8.3/MDClasses}Template')
+    template_elements = root.findall('.//{http://v8.1c.ru/8.3/MDClasses}Template')
     for template_element in template_elements:
         file_name = parametrs['full_text_catalog'] + '\\' + metadata_item['type'] + '.' + metadata_item[
             'name'] + '.Template.' + template_element.text + '.xml'
         uuid_dict[get_file_uuid(file_name)] = file_name
 
-    command_elements =  root.findall('.//{http://v8.1c.ru/8.3/MDClasses}Command')
+    command_elements = root.findall('.//{http://v8.1c.ru/8.3/MDClasses}Command')
     for command_element in command_elements:
         uuid_dict[command_element.attrib['uuid']] = this_file_name + '_command'
 
     # заполняем таблицу зависимостей
-    dep_list=[]
+    dep_list = []
 
     #из основного описания объекта выбираем типы
     for attribute_node in root.findall('.//{http://v8.1c.ru/8.1/data/core}Type'):
@@ -188,6 +188,13 @@ def read_oblect_uuid_and_dependencies(metadata_item):
         #Функциональные опции
         fops_list = list([x.text for x in depended_root.findall('.//{http://v8.1c.ru/8.3/xcf/logform}FunctionalOptions/*')])
         if not len(fops_list)==0: dep_list.extend(fops_list)
+
+        #стили
+        styles_list = list([x.text.replace('style:','StyleItem.')
+                            for x in depended_root.findall('.//*{http://v8.1c.ru/8.1/data-composition-system/core}value')
+                            if 'style:' in x.text])
+        #todo: безумно много времени
+        if not len(fops_list)==0: dep_list.extend(styles_list)
 
     metadata_item['dependencies']=dep_list
 
@@ -340,15 +347,15 @@ def copy_config():
 
     try:
         res=cursor.execute('DELETE FROM [' + parametrs['1c_shad_base'] + '].[dbo].[Config]')
-        logging.debug('drop table Config:'+repr(res))
+        logging.debug('DELETE table Config:'+repr(res))
     except:
-        logging.error('drop table Config error:'+repr(res))
+        logging.error('DELETE table Config error:'+repr(res))
 
     try:
         res=cursor.execute('DELETE FROM [' + parametrs['1c_shad_base'] + '].[dbo].[ConfigSave]')
-        logging.debug('drop table ConfigSave rowcount:'+repr(res.rowcount))
+        logging.debug('DELETE table ConfigSave rowcount:'+repr(res.rowcount))
     except:
-        logging.error('drop table ConfigSave error:'+repr(res))
+        logging.error('DELETE table ConfigSave error:'+repr(res))
 
     query_text = '''SELECT * INTO [''' + parametrs['1c_shad_base'] + '''].[dbo].[Config]
     FROM  [''' + parametrs['1c_dev_base'] + '''].[dbo].[Config] '''
@@ -695,7 +702,6 @@ def import_1c():
             +' DESIGNER /S'+parametrs['1c_server']+'\\'+parametrs['1c_shad_base']
             +' /N'+parametrs['1c_shad_login']+' /P'+parametrs['1c_shad_pass']
             +' /LoadConfigFromFiles'+parametrs['work_catalog']
-            +' /Visible'
             +' /out'+get_param('log_folder')+'\\import_log.txt')
 
     logging.debug('import status-'+repr(status))
@@ -706,7 +712,10 @@ def import_1c():
     except:
         output_str = ''
 
-    assert status==0 , 'fail to import files to 1C: '+output_str
+    if status!=0:
+        logging.error('fail to import files to 1C: '+output_str)
+
+    assert status==0 ,'fail to import files to 1C: '+output_str
 
 def export_1c():
     '''
@@ -726,6 +735,10 @@ def export_1c():
         output_str = open(get_param('log_folder')+'\\export_log.txt').read()
     except:
         output_str = ''
+
+    if status!=0:
+        logging.error('fail to export files to 1C: '+output_str)
+
     assert status==0 , 'fail to export files from 1C: '+output_str
 
 
@@ -791,10 +804,10 @@ def save_1c():
 
     tell2git_im_busy('проводится частичная выгрузка конфигурации')
 
-    with open('meta_table_list.dat', 'rb') as dump_file:
+    with open(get_param('script_catalog')+'\\meta_table_list.dat', 'rb') as dump_file:
         meta_table_list.extend(pickle.load(dump_file))
 
-    with open('uuid_dict.dat', 'rb') as dump_file:
+    with open(get_param('script_catalog')+'\\uuid_dict.dat', 'rb') as dump_file:
         uuid_dict.update(pickle.load(dump_file))
 
     modified_blocks = get_changed_blocks()
@@ -870,7 +883,8 @@ def test_func():
 if __name__ == '__main__':
 
     logging.basicConfig(format = u'%(filename)s[LINE:%(lineno)d]# %(levelname)-8s [%(asctime)s]  %(message)s',
-                        level = logging.DEBUG)
+                        level = logging.DEBUG,
+                        filename = 'C:\\1CUnit\\1C2Git_files\\logs\\work_log_'+datetime.datetime.now().strftime("%d.%m.%Y_%H_%M")+'.txt')
 
     read_ini_file()
 
@@ -878,10 +892,10 @@ if __name__ == '__main__':
         test_func()
     elif sys.argv[1] == '-s': #save
        save_1c()
-    elif sys.argv[1] == '-sa ': #save all
+    elif sys.argv[1] == '-sa': #save all
         full_export()
     else:
-        logging.error('wrong parametr '+sys.argv[1])
+        logging.error('wrong parameter '+sys.argv[1])
     
 
 
