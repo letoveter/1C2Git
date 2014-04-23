@@ -37,6 +37,9 @@ def read_ini_file():
                 parametrs[parametr[0]] = parametr[1]
 
     logging.debug('Считано ' + repr(len(parametrs)) + ' параметров настроек')
+    
+    if not parametrs:
+        log_and_raise_exc('Не смогли прочитать настройки из 1C2Git.cfg')
 
 
 #-- ini procs
@@ -684,10 +687,12 @@ def dots2folders(source_catalog, destination_catalog, files_list=None):
     logging.debug('source_catalog - '+source_catalog+', destination_catalog - '+destination_catalog)
     begin_time = datetime.datetime.now()
 
-    if files_list == None:
+    it_is_full_copying = files_list is None
+
+    if it_is_full_copying:
         all_dot_files = os.listdir(source_catalog)
     else:
-        all_dot_files = [source_catalog + '\\' + os.path.basename(x) for x in files_list]
+        all_dot_files = [os.path.join(source_catalog, os.path.basename(x)) for x in files_list]
 
     for dot_file in all_dot_files:
         file_parts_list = os.path.basename(dot_file).split('.')
@@ -701,15 +706,16 @@ def dots2folders(source_catalog, destination_catalog, files_list=None):
             os.makedirs(new_catalog)
             logging.debug('created ' + new_catalog)
 
-        # а если нет параметра?
+        #todo: а если нет параметра?
         if parametrs['how_to_copy'] == 'dummy':
             shutil.copy(dot_file, full_new_name)
-            if not files_list == None: logging.debug('Копируем из ' + dot_file + ' в ' + full_new_name)
-            logging.debug('Копируем из ' + dot_file + ' в ' + full_new_name)
+            if not it_is_full_copying:
+                logging.debug('Копируем из ' + dot_file + ' в ' + full_new_name)
         elif parametrs['how_to_copy'] == 'cmp':
             if not os.path.exists(full_new_name) or not filecmp.cmp(dot_file, full_new_name):
                 shutil.copy(dot_file, full_new_name)
-                if not files_list == None: logging.debug('Копируем из ' + dot_file + ' в ' + full_new_name)
+                if not it_is_full_copying:
+                    logging.debug('Копируем из ' + dot_file + ' в ' + full_new_name)
         elif parametrs['how_to_copy'] == 'hash':
             if not os.path.exists(full_new_name):
                 shutil.copy(dot_file, full_new_name)
@@ -820,7 +826,7 @@ def full_export():
     export_1c()
 
     logging.debug('разбираем выгруженные файлы по папкам')
-    dots2folders(parametrs['full_text_catalog'], parametrs['git_work_catalog'])
+    dots2folders(parametrs['work_catalog'], parametrs['git_work_catalog'])
 
     logging.debug('обновляем таблицу соответствий метаданных')
     read_meta_table()
@@ -921,7 +927,7 @@ def test_func():
     read_meta_table()
     read_all_uuid()
     check_uuid_table()'''
-    dots2folders(parametrs['full_text_catalog'], parametrs['git_work_catalog'])
+    dots2folders(parametrs['work_catalog'], parametrs['git_work_catalog'])
 
 #-- big procs
 
@@ -934,6 +940,7 @@ if __name__ == '__main__':
 
     read_ini_file()
 
+
     if len(sys.argv) == 1:
         test_func()
     elif sys.argv[1] == '-s':  #save
@@ -944,6 +951,7 @@ if __name__ == '__main__':
         print('export from 1C to git')
         print('-s: partially export to git')
         print('-sa: full export to git')
+        print('see logs in '+parametrs['log_folder'].replace(u'\\\\', '\\'))
     else:
         logging.error('wrong parameter ' + sys.argv[1])
     
