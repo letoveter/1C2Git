@@ -148,6 +148,8 @@ def read_oblect_uuid_and_dependencies(metadata_item):
     for form_element in form_elements:
         file_name = parameters['full_text_catalog'] + '\\' + metadata_item['type'] + '.' + metadata_item[
             'name'] + '.Form.' + form_element.text + '.xml'
+        #fixme: подумать: нужно ли хранить ссылку на файл формы, или на файл корневого объекта?
+        # Или просто на объект типа Catalog.Банки?
         uuid_dict[get_file_uuid(file_name)] = file_name
 
     template_elements = root.findall('.//{http://v8.1c.ru/8.3/MDClasses}Template')
@@ -182,6 +184,14 @@ def read_oblect_uuid_and_dependencies(metadata_item):
         for xdto_element in [x.text for x in root.findall('.//{http://v8.1c.ru/8.3/xcf/readable}value') if 'XDTOPackage.' in x.text]:
             if not xdto_element in dep_list:
                 dep_list.append(xdto_element)
+
+    #вытягиваем хранилища настроек из отчетов
+    if metadata_item['type'] == 'Report':
+        finded_variants_storage = root.findall('.//{http://v8.1c.ru/8.3/MDClasses}VariantsStorage')
+        if finded_variants_storage:
+            for sstore_element in [x.text for x in finded_variants_storage if 'SettingsStorage.' in x.text]:
+                if not sstore_element in dep_list:
+                    dep_list.append(sstore_element)
 
     #теперь придется перебрать все зависимые файлы и вытащить оттуда ссылки
     depended_files_list = glob.glob(parameters['full_text_catalog'] + '\\' + metadata_item['type'] + '.' + metadata_item[
@@ -531,9 +541,10 @@ def get_changed_objects(changed_blocks):
         elif object_name == '':
             pass  #todo: отбрасываем незначащие типа versions: проверить
         else:
-            short_object_name = os.path.basename(object_name)[:-4]
+            #short_object_name должен иметь вид "Type.Имя"
+            short_object_name = '.'.join(os.path.basename(object_name).split('.')[:2])
             if not short_object_name in modified_objects:
-                #пишем в список можифицированных объектов имя без расширения, например, Catalog.Банки
+                #пишем в список модифицированных объектов имя без расширения, например, Catalog.Банки
                 modified_objects.append(short_object_name)
     logging.debug('modified_objects-' + str(len(modified_objects)))
     logging.debug('not_found_objects-' + str(len(not_found_objects)))
@@ -797,7 +808,7 @@ def export_1c():
     assert status == 0, 'fail to export files from 1C: ' + output_str
 
 
-def get_changed_files_list(modified_objects):
+def get_changed_files_list(modified_objects, catalog):
     '''
     возвращает список измененных файлов по списку объектов
     '''
@@ -807,7 +818,7 @@ def get_changed_files_list(modified_objects):
     modified_files = []
     for object_name in modified_objects:
         #работаем с именем файла без расширения
-        modified_files.extend(glob.glob(parameters['full_text_catalog'] + '\\' + object_name + '*.*'))
+        modified_files.extend(glob.glob(catalog + '\\' + object_name + '*.*'))
     logging.debug('изменено файлов ' + str(len(modified_files)))
     return modified_files
 
@@ -877,6 +888,8 @@ def save_1c():
 
     modified_blocks = get_changed_blocks()
     modified_objects = get_changed_objects(modified_blocks)
+    logging.debug('modified_blocks '+repr(modified_blocks))
+    logging.debug('modified_objects '+repr(modified_objects))
 
     if len(modified_objects) == 0:
         logging.debug('nothing to export')
@@ -886,11 +899,11 @@ def save_1c():
     tell2git_im_busy(modified_objects)
 
     if 'Configuration' in modified_objects:
-        logging.debug('need full export:' + len(modified_objects))
+        logging.debug('need full export:' + repr(len(modified_objects)))
         #full_export()
         return
 
-    modified_files = get_changed_files_list(modified_objects)
+    modified_files = get_changed_files_list(modified_objects, parameters['full_text_catalog'])
 
     logging.debug('empty folder ' + parameters['work_catalog'])
     simply_empty_dir(parameters['work_catalog'])
@@ -911,6 +924,8 @@ def save_1c():
 
     export_1c()
 
+    #Повторно получаем список файлов уже из  рабочего каталога
+    modified_files = get_changed_files_list(modified_objects,parameters['work_catalog'])
     dots2folders(parameters['work_catalog'], parameters['git_work_catalog'], modified_files)
 
     copy_changed_bloсks('[' + parameters['1c_shad_base'] + '].[dbo].[ConfigSave]',
@@ -938,26 +953,30 @@ def test_func():
     #full_export()
     #save_1c()
     #import_1c()
+
     '''with open('meta_table_list.dat', 'rb') as dump_file:
         meta_table_list.extend(pickle.load(dump_file))
     v=[x for x in meta_table_list if x['name']=='Банки']
-    print(v)
+    print(v)'''
     logging.debug('обновляем таблицу соответствий метаданных')
     read_meta_table()
     read_all_uuid()
-    check_and_save_uuid_table()'''
+    check_and_save_uuid_table()
     #dots2folders(parametrs['work_catalog'], parametrs['git_work_catalog'])
 
-
+    '''
     read_meta_table()
     read_all_uuid()
-    check_and_save_uuid_table()
+    check_and_save_uuid_table()'''
 
     #logging.debug('обновляем папку стабов')
     #fill_dummy_catalog()
 
     #tell2git_im_free()
 
+    '''with open(get_param('script_catalog') + '\\uuid_dict.dat', 'rb') as dump_file:
+        uuid_dict.update(pickle.load(dump_file))
+    print(uuid_dict['9ed016b2-2a4a-43a1-a336-6b13d68b3d0a'])'''
 
 #-- big procs
 
