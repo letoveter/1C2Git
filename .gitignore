@@ -3,4 +3,8 @@
 meta_table_list.dat
 uuid_dict.dat
 export_log.txt
+<<<<<<< HEAD
 *.pyc
+=======
+/test_xpath.py
+>>>>>>> bdcc7598b3a561abee96a30b9f9bc96e48614a3d
