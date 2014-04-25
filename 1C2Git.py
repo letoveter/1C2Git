@@ -19,7 +19,20 @@ parameters = {}
 meta_table_list = []
 uuid_dict = {}
 
-#++ ini procs
+class TestSomething:
+    def setup(self):
+        print('setup')
+    def teardown(self):
+        print('teardown')
+
+    def test_one(self):
+        assert True
+
+    def test_two(self):
+        assert False
+
+def test_three():
+    assert True
 
 def read_ini_file():
     """
@@ -188,10 +201,16 @@ def read_oblect_uuid_and_dependencies(metadata_item):
     #вытягиваем хранилища настроек из отчетов
     if metadata_item['type'] == 'Report':
         finded_variants_storage = root.findall('.//{http://v8.1c.ru/8.3/MDClasses}VariantsStorage')
-        if finded_variants_storage:
-            for sstore_element in [x.text for x in finded_variants_storage if 'SettingsStorage.' in x.text]:
-                if not sstore_element in dep_list:
-                    dep_list.append(sstore_element)
+        try:
+            if not finded_variants_storage is None:
+                variants_storage_iterator = [x.text for x in finded_variants_storage if 'SettingsStorage.' in x.text]
+                if not variants_storage_iterator is None:
+                    for sstore_element in variants_storage_iterator:
+                        if not sstore_element in dep_list:
+                            dep_list.append(sstore_element)
+        except:
+         logging.error('trouble with '+repr(metadata_item)+', '+repr(finded_variants_storage))
+
 
     #теперь придется перебрать все зависимые файлы и вытащить оттуда ссылки
     depended_files_list = glob.glob(parameters['full_text_catalog'] + '\\' + metadata_item['type'] + '.' + metadata_item[
@@ -949,7 +968,7 @@ def prepare():
     logging.debug('время выполнения сценария - ', datetime.datetime.now() - begin_time)
 
 
-def test_func():
+def run_tst_func():
     #full_export()
     #save_1c()
     #import_1c()
