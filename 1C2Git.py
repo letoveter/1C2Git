@@ -22,14 +22,14 @@ uuid_dict = {}
 
 #++ ini procs
 
-def read_ini_file():
+def read_ini_file(file_name):
     """
 	считываем файл с настройками
 	файл должен называться 1C2Git.cfg и лежать рядом со сценарием 1C2Git.py
 	1C2Git.cfg не коммитится!!
 	"""
     config_raw = configparser.ConfigParser()
-    config_raw.read('1C2Git.cfg','UTF-8')
+    config_raw.read(file_name,'UTF-8')
     for section in config_raw.sections():
         for parametr in config_raw.items(section):
             if parametr[0][-4:]=='list':
@@ -381,10 +381,10 @@ def check_uuid_table():
 
     assert len(unknown_uuid)==0,'total-'+repr(len(unknown_uuid))+', first 10-'+repr(unknown_uuid[:10])
 
-    with open('uuid_dict.dat','wb') as dump_file:
+    with open(parametrs['dumps_catalog']+'\\uuid_dict.dat','wb') as dump_file:
         pickle.dump(uuid_dict, dump_file)
 
-    with open('meta_table_list.dat', 'wb') as dump_file:
+    with open(parametrs['dumps_catalog']+'\\meta_table_list.dat', 'wb') as dump_file:
         pickle.dump(meta_table_list,dump_file)
 
 def connect2db():
@@ -791,10 +791,10 @@ def save_1c():
 
     tell2git_im_busy('проводится частичная выгрузка конфигурации')
 
-    with open('meta_table_list.dat', 'rb') as dump_file:
+    with open(parametrs['dumps_catalog']+'\\meta_table_list.dat', 'rb') as dump_file:
         meta_table_list.extend(pickle.load(dump_file))
 
-    with open('uuid_dict.dat', 'rb') as dump_file:
+    with open(parametrs['dumps_catalog']+'\\uuid_dict.dat', 'rb') as dump_file:
         uuid_dict.update(pickle.load(dump_file))
 
     modified_blocks = get_changed_blocks()
@@ -869,16 +869,17 @@ def test_func():
 
 if __name__ == '__main__':
 
-    logging.basicConfig(format = u'%(filename)s[LINE:%(lineno)d]# %(levelname)-8s [%(asctime)s]  %(message)s',
-                        level = logging.DEBUG)
+    logging.basicConfig(format=u'%(filename)s[LINE:%(lineno)d]# %(levelname)-8s [%(asctime)s]  %(message)s',
+                        level=logging.DEBUG)
 
-    read_ini_file()
+    #todo: проверить что 3 аргуметом идет именно *.cfg
+    read_ini_file(sys.argv[2])
 
     if len(sys.argv) == 1:
         test_func()
     elif sys.argv[1] == '-s': #save
        save_1c()
-    elif sys.argv[1] == '-sa ': #save all
+    elif sys.argv[1] == '-sa': #save all
         full_export()
     else:
         logging.error('wrong parametr '+sys.argv[1])
