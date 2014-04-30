@@ -37,7 +37,6 @@ def test_three():
 def read_ini_file(file_name):
     """
 	считываем файл с настройками
-	файл должен называться 1C2Git.cfg и лежать рядом со сценарием 1C2Git.py
 	1C2Git.cfg не коммитится!!
 	"""
     config_raw = configparser.ConfigParser()
@@ -413,7 +412,7 @@ def copy_config():
     query_text = 'DELETE FROM [' + parameters['1c_shad_base'] + '].[dbo].[Config]'
     run_sql(db,cursor, query_text, True)
 
-    query_text = 'DELETE FROM [' + parameters['1c_shad_base'] + '].[dbo].[Config]'
+    query_text = 'DELETE FROM [' + parameters['1c_shad_base'] + '].[dbo].[ConfigSave]'
     run_sql(db,cursor, query_text)
 
     query_text = '''INSERT INTO [''' + parameters['1c_shad_base'] + '''].[dbo].[Config]([FileName]
@@ -978,10 +977,12 @@ def run_tst_func():
         meta_table_list.extend(pickle.load(dump_file))
     v=[x for x in meta_table_list if x['name']=='Банки']
     print(v)'''
+
+    '''
     logging.debug('обновляем таблицу соответствий метаданных')
     read_meta_table()
     read_all_uuid()
-    check_and_save_uuid_table()
+    check_and_save_uuid_table() '''
     #dots2folders(parametrs['work_catalog'], parametrs['git_work_catalog'])
 
     '''
@@ -992,28 +993,27 @@ def run_tst_func():
     #logging.debug('обновляем папку стабов')
     #fill_dummy_catalog()
 
+    #logging.error(repr(parameters))
+
     #tell2git_im_free()
 
     '''with open(get_param('script_catalog') + '\\uuid_dict.dat', 'rb') as dump_file:
         uuid_dict.update(pickle.load(dump_file))
     print(uuid_dict['9ed016b2-2a4a-43a1-a336-6b13d68b3d0a'])'''
 
-#-- big procs
 
 if __name__ == '__main__':
 
-    logging.basicConfig(format=u'%(filename)s[LINE:%(lineno)d]# %(levelname)-8s [%(asctime)s]  %(message)s',
-                        level=logging.DEBUG,
-                        filename=parameters['log_folder']+'\\work_log_' + datetime.datetime.now().strftime(
-                            "%d.%m.%Y_%H_%M") + '.txt')
-
+    format_string = u'%(filename)s[LINE:%(lineno)d]# %(levelname)-8s [%(asctime)s]  %(message)s'
+    file_name = os.path.join(os.path.dirname(sys.argv[2])+'\\logs\\work_log_' + datetime.datetime.now().strftime("%d_%m_%Y_%H_%M") + '.txt')
+    logging.basicConfig(filename=file_name, level=logging.DEBUG, format=format_string)
 
     #todo: проверить что 3 аргуметом идет именно *.cfg
     read_ini_file(sys.argv[2])
 
 
-    if len(sys.argv) == 1:
-        test_func()
+    if sys.argv[1] == '-t':
+        run_tst_func()
     elif sys.argv[1] == '-s':  #save
         save_1c()
     elif sys.argv[1] == '-sa':  #save all
@@ -1024,7 +1024,7 @@ if __name__ == '__main__':
         print('-sa: full export to git')
         print('see logs in '+parameters['log_folder'].replace(u'\\\\', '\\'))
     else:
-        logging.error('wrong parameter ' + sys.argv[1])
+        logging.error('wrong parameters ' + sys.argv[1:])
     
 
 
