@@ -19,20 +19,28 @@ parameters = {}
 meta_table_list = []
 uuid_dict = {}
 
-#++ ini procs
+class TestSomething:
+    def setup(self):
+        print('setup')
+    def teardown(self):
+        print('teardown')
+
+    def test_one(self):
+        assert True
+
+    def test_two(self):
+        assert False
+
+def test_three():
+    assert True
 
 def read_ini_file(file_name):
     """
 	считываем файл с настройками
-	файл должен называться 1C2Git.cfg и лежать рядом со сценарием 1C2Git.py
 	1C2Git.cfg не коммитится!!
 	"""
     config_raw = configparser.ConfigParser()
-<<<<<<< HEAD
     config_raw.read(file_name,'UTF-8')
-=======
-    config_raw.read('C:\\1CUnit\\1C2Git\\1C2Git.cfg', 'UTF-8')  #todo: раскостылить
->>>>>>> bdcc7598b3a561abee96a30b9f9bc96e48614a3d
     for section in config_raw.sections():
         for parametr in config_raw.items(section):
             if parametr[0][-4:] == 'list':
@@ -152,6 +160,8 @@ def read_oblect_uuid_and_dependencies(metadata_item):
     for form_element in form_elements:
         file_name = parameters['full_text_catalog'] + '\\' + metadata_item['type'] + '.' + metadata_item[
             'name'] + '.Form.' + form_element.text + '.xml'
+        #fixme: подумать: нужно ли хранить ссылку на файл формы, или на файл корневого объекта?
+        # Или просто на объект типа Catalog.Банки?
         uuid_dict[get_file_uuid(file_name)] = file_name
 
     template_elements = root.findall('.//{http://v8.1c.ru/8.3/MDClasses}Template')
@@ -186,6 +196,20 @@ def read_oblect_uuid_and_dependencies(metadata_item):
         for xdto_element in [x.text for x in root.findall('.//{http://v8.1c.ru/8.3/xcf/readable}value') if 'XDTOPackage.' in x.text]:
             if not xdto_element in dep_list:
                 dep_list.append(xdto_element)
+
+    #вытягиваем хранилища настроек из отчетов
+    if metadata_item['type'] == 'Report':
+        finded_variants_storage = root.findall('.//{http://v8.1c.ru/8.3/MDClasses}VariantsStorage')
+        try:
+            if not finded_variants_storage is None:
+                variants_storage_iterator = [x.text for x in finded_variants_storage if 'SettingsStorage.' in x.text]
+                if not variants_storage_iterator is None:
+                    for sstore_element in variants_storage_iterator:
+                        if not sstore_element in dep_list:
+                            dep_list.append(sstore_element)
+        except:
+         logging.error('trouble with '+repr(metadata_item)+', '+repr(finded_variants_storage))
+
 
     #теперь придется перебрать все зависимые файлы и вытащить оттуда ссылки
     depended_files_list = glob.glob(parameters['full_text_catalog'] + '\\' + metadata_item['type'] + '.' + metadata_item[
@@ -388,7 +412,7 @@ def copy_config():
     query_text = 'DELETE FROM [' + parameters['1c_shad_base'] + '].[dbo].[Config]'
     run_sql(db,cursor, query_text, True)
 
-    query_text = 'DELETE FROM [' + parameters['1c_shad_base'] + '].[dbo].[Config]'
+    query_text = 'DELETE FROM [' + parameters['1c_shad_base'] + '].[dbo].[ConfigSave]'
     run_sql(db,cursor, query_text)
 
     query_text = '''INSERT INTO [''' + parameters['1c_shad_base'] + '''].[dbo].[Config]([FileName]
@@ -430,24 +454,15 @@ def check_and_save_uuid_table():
     cursor.close()
     db.close()
 
-<<<<<<< HEAD
-    assert len(unknown_uuid)==0,'total-'+repr(len(unknown_uuid))+', first 10-'+repr(unknown_uuid[:10])
 
-    with open(parametrs['dumps_catalog']+'\\uuid_dict.dat','wb') as dump_file:
+    with open(parameters['dumps_catalog']+'\\uuid_dict.dat','wb') as dump_file:
         pickle.dump(uuid_dict, dump_file)
 
-    with open(parametrs['dumps_catalog']+'\\meta_table_list.dat', 'wb') as dump_file:
+    with open(parameters['dumps_catalog']+'\\meta_table_list.dat', 'wb') as dump_file:
         pickle.dump(meta_table_list,dump_file)
-=======
-    with open('uuid_dict.dat', 'wb') as dump_file:
-        pickle.dump(uuid_dict, dump_file)
-
-    with open('meta_table_list.dat', 'wb') as dump_file:
-        pickle.dump(meta_table_list, dump_file)
 
     if not len(unknown_uuid) == 0:
         log_and_raise_exc('total-' + repr(len(unknown_uuid)) + ', first 10-' + repr(unknown_uuid[:10]))
->>>>>>> bdcc7598b3a561abee96a30b9f9bc96e48614a3d
 
 
 def connect2db():
@@ -545,9 +560,10 @@ def get_changed_objects(changed_blocks):
         elif object_name == '':
             pass  #todo: отбрасываем незначащие типа versions: проверить
         else:
-            short_object_name = os.path.basename(object_name)[:-4]
+            #short_object_name должен иметь вид "Type.Имя"
+            short_object_name = '.'.join(os.path.basename(object_name).split('.')[:2])
             if not short_object_name in modified_objects:
-                #пишем в список можифицированных объектов имя без расширения, например, Catalog.Банки
+                #пишем в список модифицированных объектов имя без расширения, например, Catalog.Банки
                 modified_objects.append(short_object_name)
     logging.debug('modified_objects-' + str(len(modified_objects)))
     logging.debug('not_found_objects-' + str(len(not_found_objects)))
@@ -811,7 +827,7 @@ def export_1c():
     assert status == 0, 'fail to export files from 1C: ' + output_str
 
 
-def get_changed_files_list(modified_objects):
+def get_changed_files_list(modified_objects, catalog):
     '''
     возвращает список измененных файлов по списку объектов
     '''
@@ -821,7 +837,7 @@ def get_changed_files_list(modified_objects):
     modified_files = []
     for object_name in modified_objects:
         #работаем с именем файла без расширения
-        modified_files.extend(glob.glob(parameters['full_text_catalog'] + '\\' + object_name + '*.*'))
+        modified_files.extend(glob.glob(catalog + '\\' + object_name + '*.*'))
     logging.debug('изменено файлов ' + str(len(modified_files)))
     return modified_files
 
@@ -883,21 +899,16 @@ def save_1c():
 
     tell2git_im_busy('проводится частичная выгрузка конфигурации')
 
-<<<<<<< HEAD
-    with open(parametrs['dumps_catalog']+'\\meta_table_list.dat', 'rb') as dump_file:
+    with open(parameters['dumps_catalog']+'\\meta_table_list.dat', 'rb') as dump_file:
         meta_table_list.extend(pickle.load(dump_file))
 
-    with open(parametrs['dumps_catalog']+'\\uuid_dict.dat', 'rb') as dump_file:
-=======
-    with open(get_param('script_catalog') + '\\meta_table_list.dat', 'rb') as dump_file:
-        meta_table_list.extend(pickle.load(dump_file))
-
-    with open(get_param('script_catalog') + '\\uuid_dict.dat', 'rb') as dump_file:
->>>>>>> bdcc7598b3a561abee96a30b9f9bc96e48614a3d
+    with open(parameters['dumps_catalog']+'\\uuid_dict.dat', 'rb') as dump_file:
         uuid_dict.update(pickle.load(dump_file))
 
     modified_blocks = get_changed_blocks()
     modified_objects = get_changed_objects(modified_blocks)
+    logging.debug('modified_blocks '+repr(modified_blocks))
+    logging.debug('modified_objects '+repr(modified_objects))
 
     if len(modified_objects) == 0:
         logging.debug('nothing to export')
@@ -907,11 +918,11 @@ def save_1c():
     tell2git_im_busy(modified_objects)
 
     if 'Configuration' in modified_objects:
-        logging.debug('need full export:' + len(modified_objects))
+        logging.debug('need full export:' + repr(len(modified_objects)))
         #full_export()
         return
 
-    modified_files = get_changed_files_list(modified_objects)
+    modified_files = get_changed_files_list(modified_objects, parameters['full_text_catalog'])
 
     logging.debug('empty folder ' + parameters['work_catalog'])
     simply_empty_dir(parameters['work_catalog'])
@@ -932,6 +943,8 @@ def save_1c():
 
     export_1c()
 
+    #Повторно получаем список файлов уже из  рабочего каталога
+    modified_files = get_changed_files_list(modified_objects,parameters['work_catalog'])
     dots2folders(parameters['work_catalog'], parameters['git_work_catalog'], modified_files)
 
     copy_changed_bloсks('[' + parameters['1c_shad_base'] + '].[dbo].[ConfigSave]',
@@ -955,59 +968,55 @@ def prepare():
     logging.debug('время выполнения сценария - ', datetime.datetime.now() - begin_time)
 
 
-def test_func():
+def run_tst_func():
     #full_export()
     #save_1c()
     #import_1c()
+
     '''with open('meta_table_list.dat', 'rb') as dump_file:
         meta_table_list.extend(pickle.load(dump_file))
     v=[x for x in meta_table_list if x['name']=='Банки']
-    print(v)
+    print(v)'''
+
+    '''
     logging.debug('обновляем таблицу соответствий метаданных')
     read_meta_table()
     read_all_uuid()
-    check_and_save_uuid_table()'''
+    check_and_save_uuid_table() '''
     #dots2folders(parametrs['work_catalog'], parametrs['git_work_catalog'])
 
-
+    '''
     read_meta_table()
     read_all_uuid()
-    check_and_save_uuid_table()
+    check_and_save_uuid_table()'''
 
     #logging.debug('обновляем папку стабов')
     #fill_dummy_catalog()
 
+    #logging.error(repr(parameters))
+
     #tell2git_im_free()
 
+    '''with open(get_param('script_catalog') + '\\uuid_dict.dat', 'rb') as dump_file:
+        uuid_dict.update(pickle.load(dump_file))
+    print(uuid_dict['9ed016b2-2a4a-43a1-a336-6b13d68b3d0a'])'''
 
-#-- big procs
 
 if __name__ == '__main__':
 
-    logging.basicConfig(format=u'%(filename)s[LINE:%(lineno)d]# %(levelname)-8s [%(asctime)s]  %(message)s',
-<<<<<<< HEAD
-                        level=logging.DEBUG)
-=======
-                        level=logging.DEBUG,
-                        filename='C:\\1CUnit\\1C2Git_files\\logs\\work_log_' + datetime.datetime.now().strftime(
-                            "%d.%m.%Y_%H_%M") + '.txt')
->>>>>>> bdcc7598b3a561abee96a30b9f9bc96e48614a3d
+    format_string = u'%(filename)s[LINE:%(lineno)d]# %(levelname)-8s [%(asctime)s]  %(message)s'
+    file_name = os.path.join(os.path.dirname(sys.argv[2])+'\\logs\\work_log_' + datetime.datetime.now().strftime("%d_%m_%Y_%H_%M") + '.txt')
+    logging.basicConfig(filename=file_name, level=logging.DEBUG, format=format_string)
 
     #todo: проверить что 3 аргуметом идет именно *.cfg
     read_ini_file(sys.argv[2])
 
 
-    if len(sys.argv) == 1:
-        test_func()
-<<<<<<< HEAD
-    elif sys.argv[1] == '-s': #save
-       save_1c()
-    elif sys.argv[1] == '-sa': #save all
-=======
+    if sys.argv[1] == '-t':
+        run_tst_func()
     elif sys.argv[1] == '-s':  #save
         save_1c()
     elif sys.argv[1] == '-sa':  #save all
->>>>>>> bdcc7598b3a561abee96a30b9f9bc96e48614a3d
         full_export()
     elif sys.argv[1] == '-?':
         print('export from 1C to git')
@@ -1015,7 +1024,7 @@ if __name__ == '__main__':
         print('-sa: full export to git')
         print('see logs in '+parameters['log_folder'].replace(u'\\\\', '\\'))
     else:
-        logging.error('wrong parameter ' + sys.argv[1])
+        logging.error('wrong parameters ' + sys.argv[1:])
     
 
 
