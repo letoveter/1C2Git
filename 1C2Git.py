@@ -15,10 +15,13 @@ import logging
 
 __author__ = 'jgoncharova'
 
+# main collections
 parameters = {}
 meta_table_list = []
 uuid_dict = {}
+served_classes = ['CommonModule', 'Constant', 'DataProcessor', 'Enum', 'Report', 'WebService', 'XDTOPackage']
 
+# test examples
 class TestSomething:
     def setup(self):
         print('setup')
@@ -33,6 +36,8 @@ class TestSomething:
 
 def test_three():
     assert True
+
+#-- common procs
 
 def read_ini_file(file_name):
     """
@@ -54,14 +59,11 @@ def read_ini_file(file_name):
         log_and_raise_exc('Не смогли прочитать настройки из 1C2Git.cfg')
 
 
-#-- ini procs
-
-#++ common procs
 
 def get_param(param_name):
     param_value = parameters.get(param_name, None)
     if param_value is None:
-        raise 'Не найден в конфигурации параметр ' + param_name
+        log_and_raise_exc('Не найден в конфигурации параметр ' + param_name)
 
     return param_value
 
@@ -76,9 +78,9 @@ def simply_empty_dir(path):
             logging.error("can't delete " + the_file)
 
 
-#-- common procs
 
-#++ reading configuration info
+
+#reading configuration info
 
 def read_meta_object(node, type):
     elements_list = node.findall("{http://v8.1c.ru/8.3/MDClasses}" + type)
@@ -772,6 +774,30 @@ def dots2folders(source_catalog, destination_catalog, files_list=None):
             raise Exception("не заполнена настройка how_to_copy")
     logging.debug('время выполнения dots2folders - ' + str(datetime.datetime.now() - begin_time))
 
+def copy_catalog(source_dir, destination_dir):
+    logging.debug('========copy_catalog========')
+    begin_time = datetime.datetime.now()
+
+    shutil.rmtree(destination_dir)
+    shutil.copytree(source_dir, destination_dir)
+
+    logging.debug('время выполнения copy_catalog - ' + str(datetime.datetime.now() - begin_time))
+
+
+def get_changed_files_list(modified_objects, catalog):
+    '''
+    возвращает список измененных файлов по списку объектов
+    '''
+    logging.debug('========get_changed_files_list========')
+    begin_time = datetime.datetime.now()
+
+    modified_files = []
+    for object_name in modified_objects:
+        #работаем с именем файла без расширения
+        modified_files.extend(glob.glob(catalog + '\\' + object_name + '*.*'))
+    logging.debug('изменено файлов ' + str(len(modified_files)))
+    return modified_files
+
 
 #++ work with 1C
 
@@ -827,34 +853,7 @@ def export_1c():
     assert status == 0, 'fail to export files from 1C: ' + output_str
 
 
-def get_changed_files_list(modified_objects, catalog):
-    '''
-    возвращает список измененных файлов по списку объектов
-    '''
-    logging.debug('========get_changed_files_list========')
-    begin_time = datetime.datetime.now()
-
-    modified_files = []
-    for object_name in modified_objects:
-        #работаем с именем файла без расширения
-        modified_files.extend(glob.glob(catalog + '\\' + object_name + '*.*'))
-    logging.debug('изменено файлов ' + str(len(modified_files)))
-    return modified_files
-
-
-#-- work with 1C
-
-#++ big procs
-
-def copy_catalog(source_dir, destination_dir):
-    logging.debug('========copy_catalog========')
-    begin_time = datetime.datetime.now()
-
-    shutil.rmtree(destination_dir)
-    shutil.copytree(source_dir, destination_dir)
-
-    logging.debug('время выполнения copy_catalog - ' + str(datetime.datetime.now() - begin_time))
-
+#++ main procedures
 
 def full_export():
     '''
@@ -956,17 +955,6 @@ def save_1c():
     logging.debug('время выполнения save_1c - ' + str(datetime.datetime.now() - begin_time))
 
 
-def prepare():
-    begin_time = datetime.datetime.now()
-
-    read_meta_table()
-
-    read_all_uuid()
-
-    check_and_save_uuid_table()
-
-    logging.debug('время выполнения сценария - ', datetime.datetime.now() - begin_time)
-
 
 def run_tst_func():
     #full_export()
@@ -1008,7 +996,7 @@ if __name__ == '__main__':
     file_name = os.path.join(os.path.dirname(sys.argv[2])+'\\logs\\work_log_' + datetime.datetime.now().strftime("%d_%m_%Y_%H_%M") + '.txt')
     logging.basicConfig(filename=file_name, level=logging.DEBUG, format=format_string)
 
-    #todo: проверить что 3 аргуметом идет именно *.cfg
+    #todo: проверить что 3 аргументом идет именно *.cfg
     read_ini_file(sys.argv[2])
 
 
