@@ -889,6 +889,20 @@ def full_export():
     logging.debug('время выполнения сценария - ' + str(datetime.datetime.now() - begin_time))
 
 
+def need_full_export(modified_objects):
+    if 'Configuration' in modified_objects:
+        logging.debug('Configuration in modified_objects, need full export')
+        return True
+
+    modified_classes = [x.split('.')[0] for x in modified_objects]
+    modified_classes_unique = {}.fromkeys(modified_classes).keys()
+    unserved_classes = [x for x in modified_classes_unique if x not in served_classes]
+    if unserved_classes:
+        logging.debug('userved classes: '+repr(unserved_classes))
+        return True
+    else:
+        return False
+
 def save_1c():
     '''
     Сохраняет измененные объекты 1С в рабочий каталог Git
@@ -916,7 +930,7 @@ def save_1c():
 
     tell2git_im_busy(modified_objects)
 
-    if 'Configuration' in modified_objects:
+    if need_full_export(modified_objects):
         logging.debug('need full export:' + repr(len(modified_objects)))
         #full_export()
         return
