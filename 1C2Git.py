@@ -19,12 +19,15 @@ __author__ = 'jgoncharova'
 parameters = {}
 meta_table_list = []
 uuid_dict = {}
-served_classes = ['CommonModule', 'Constant', 'DataProcessor', 'Enum', 'Report', 'WebService', 'XDTOPackage']
+served_classes = ['CommonModule', 'Constant', 'DataProcessor', 'Enum', 'Report', 'WebService', 'XDTOPackage',
+                  'Role']  #tested
+served_classes.extend(['Catalog'])  #testing
 
 # test examples
 class TestSomething:
     def setup(self):
         print('setup')
+
     def teardown(self):
         print('teardown')
 
@@ -234,15 +237,17 @@ def read_oblect_uuid_and_dependencies(metadata_item):
         #Функциональные опции
         fops_list = list(
             [x.text for x in depended_root.findall('.//{http://v8.1c.ru/8.3/xcf/logform}FunctionalOptions/*')])
-        if not len(fops_list) == 0: dep_list.extend(fops_list)
+        if not len(fops_list) == 0:
+            dep_list.extend(fops_list)
 
         #стили
-        styles_list = list([x.text.replace('style:', 'StyleItem.') for x in
-                            depended_root.findall('.//{http://v8.1c.ru/8.1/data-composition-system/core}value') if
-                            not x.text is None and 'style:' in x.text])
-        #todo: безумно много времени
-        if not len(styles_list) == 0:
-            dep_list.extend(styles_list)
+        with open(depended_file, 'r', -1, 'UTF-8') as opened_file:
+            styles_list = list([x.text.replace('>style:', 'StyleItem.')[:-1] for x in
+                                re.findall('>style:.*<', opened_file.read())])
+
+            if not len(styles_list) == 0:
+                styles_list = unique_list(styles_list)
+                dep_list.extend(styles_list)
 
     metadata_item['dependencies'] = dep_list
 
@@ -774,6 +779,11 @@ def dots2folders(source_catalog, destination_catalog, files_list=None):
             raise Exception("не заполнена настройка how_to_copy")
     logging.debug('время выполнения dots2folders - ' + str(datetime.datetime.now() - begin_time))
 
+
+def folder2dots(source_catalog, destination_catalog):
+    pass
+
+
 def copy_catalog(source_dir, destination_dir):
     logging.debug('========copy_catalog========')
     begin_time = datetime.datetime.now()
@@ -854,6 +864,19 @@ def export_1c():
 
 
 #++ main procedures
+def full_import():
+    """
+    загружаем в 1С данные из рабочего каталога git
+    """
+    logging.debug('========full_import========')
+    begin_time = datetime.datetime.now()
+
+    simply_empty_dir(parameters['work_catalog'])
+    folder2dots(parameters['git_work_catalog'], parameters['work_catalog'])
+    import_1c()
+
+    logging.debug('время выполнения сценария - ' + str(datetime.datetime.now() - begin_time))
+
 
 def full_export():
     '''
@@ -889,19 +912,24 @@ def full_export():
     logging.debug('время выполнения сценария - ' + str(datetime.datetime.now() - begin_time))
 
 
+def unique_list(our_list):
+    return {}.fromkeys(our_list).keys()
+
+
 def need_full_export(modified_objects):
     if 'Configuration' in modified_objects:
         logging.debug('Configuration in modified_objects, need full export')
         return True
 
     modified_classes = [x.split('.')[0] for x in modified_objects]
-    modified_classes_unique = {}.fromkeys(modified_classes).keys()
+    modified_classes_unique = unique_list(modified_classes)
     unserved_classes = [x for x in modified_classes_unique if x not in served_classes]
     if unserved_classes:
-        logging.debug('userved classes: '+repr(unserved_classes))
+        logging.debug('userved classes: ' + repr(unserved_classes))
         return True
     else:
         return False
+
 
 def save_1c():
     '''
@@ -969,16 +997,15 @@ def save_1c():
     logging.debug('время выполнения save_1c - ' + str(datetime.datetime.now() - begin_time))
 
 
-
 def run_tst_func():
     #full_export()
     #save_1c()
     #import_1c()
 
-    '''with open('meta_table_list.dat', 'rb') as dump_file:
+    with open(parameters['dumps_catalog'] + '\\meta_table_list.dat', 'rb') as dump_file:
         meta_table_list.extend(pickle.load(dump_file))
-    v=[x for x in meta_table_list if x['name']=='Банки']
-    print(v)'''
+    v = [x for x in meta_table_list if x['name'] == 'Банки']
+    print(v)
 
     '''
     logging.debug('обновляем таблицу соответствий метаданных')
@@ -1024,7 +1051,9 @@ if __name__ == '__main__':
         print('export from 1C to git')
         print('-s: partially export to git')
         print('-sa: full export to git')
-        print('see logs in '+parameters['log_folder'].replace(u'\\\\', '\\'))
+        print('see logs in ' + parameters['log_folder'].replace(u'\\\\', '\\'))
+    elif sys.argv[1] == '-la':  #save all
+        full_import()
     else:
         logging.error('wrong parameters ' + sys.argv[1:])
     
