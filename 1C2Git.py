@@ -48,7 +48,7 @@ def read_ini_file(file_name):
 	1C2Git.cfg не коммитится!!
 	"""
     config_raw = configparser.ConfigParser()
-    config_raw.read(file_name,'UTF-8')
+    config_raw.read(file_name, 'UTF-8')
     for section in config_raw.sections():
         for parametr in config_raw.items(section):
             if parametr[0][-4:] == 'list':
@@ -60,7 +60,6 @@ def read_ini_file(file_name):
 
     if not parameters:
         log_and_raise_exc('Не смогли прочитать настройки из 1C2Git.cfg')
-
 
 
 def get_param(param_name):
@@ -79,8 +78,6 @@ def simply_empty_dir(path):
                 os.unlink(file_path)
         except:
             logging.error("can't delete " + the_file)
-
-
 
 
 #reading configuration info
@@ -198,7 +195,8 @@ def read_oblect_uuid_and_dependencies(metadata_item):
 
     #вытягиваем xdto пакеты из веб-сервисов
     if metadata_item['type'] == 'WebService':
-        for xdto_element in [x.text for x in root.findall('.//{http://v8.1c.ru/8.3/xcf/readable}value') if 'XDTOPackage.' in x.text]:
+        for xdto_element in [x.text for x in root.findall('.//{http://v8.1c.ru/8.3/xcf/readable}value') if
+                             'XDTOPackage.' in x.text]:
             if not xdto_element in dep_list:
                 dep_list.append(xdto_element)
 
@@ -213,12 +211,13 @@ def read_oblect_uuid_and_dependencies(metadata_item):
                         if not sstore_element in dep_list:
                             dep_list.append(sstore_element)
         except:
-         logging.error('trouble with '+repr(metadata_item)+', '+repr(finded_variants_storage))
+            logging.error('trouble with ' + repr(metadata_item) + ', ' + repr(finded_variants_storage))
 
 
     #теперь придется перебрать все зависимые файлы и вытащить оттуда ссылки
-    depended_files_list = glob.glob(parameters['full_text_catalog'] + '\\' + metadata_item['type'] + '.' + metadata_item[
-        'name'] + '*.xml')
+    depended_files_list = glob.glob(
+        parameters['full_text_catalog'] + '\\' + metadata_item['type'] + '.' + metadata_item[
+            'name'] + '*.xml')
     for depended_file in depended_files_list:
         depended_file_tree = etree.parse(depended_file)
         depended_root = depended_file_tree.getroot()
@@ -228,7 +227,8 @@ def read_oblect_uuid_and_dependencies(metadata_item):
                          if
                          x.text[:3] == 'cfg' and not x.text == 'cfg:' + metadata_item['type'] + 'Ref.' + metadata_item[
                              'name']])
-        if not len(ref_list) == 0: dep_list.extend(ref_list)
+        if not len(ref_list) == 0:
+            dep_list.extend(ref_list)
 
         #выдергиваем роли
         role_list = list([x.attrib['name'] for x in depended_root.findall('.//*[@name]') if 'Role' in x.attrib['name']])
@@ -373,7 +373,7 @@ def tell2git_im_busy(message):
         elif type(message) == list:
             mark_file.write('Состав объектов для выгрузки:')
             for m_obj in message:
-                mark_file.write(m_obj)
+                mark_file.write(m_obj + ' ')
         else:
             raise Exception("Неверный тип message")
 
@@ -394,11 +394,10 @@ def log_and_raise_exc(exception_text):
     raise Exception(exception_text)
 
 
-def run_sql(db,cursor, query_text, check_result = False):
-
+def run_sql(db, cursor, query_text, check_result=False):
     try:
         res = cursor.execute(query_text)
-        logging.debug('RUN ' + query_text + '\n Result:' + repr(res.rowcount)+' rows')
+        logging.debug('RUN ' + query_text + '\n Result:' + repr(res.rowcount) + ' rows')
     except:
         db.close()
         log_and_raise_exc('ERROR IN ' + query_text)
@@ -409,7 +408,6 @@ def run_sql(db,cursor, query_text, check_result = False):
 
 
 def copy_config():
-
     logging.debug('========copy_config========')
     begin_time = datetime.datetime.now()
 
@@ -417,10 +415,10 @@ def copy_config():
     cursor = db.cursor()
 
     query_text = 'DELETE FROM [' + parameters['1c_shad_base'] + '].[dbo].[Config]'
-    run_sql(db,cursor, query_text, True)
+    run_sql(db, cursor, query_text, True)
 
     query_text = 'DELETE FROM [' + parameters['1c_shad_base'] + '].[dbo].[ConfigSave]'
-    run_sql(db,cursor, query_text)
+    run_sql(db, cursor, query_text)
 
     query_text = '''INSERT INTO [''' + parameters['1c_shad_base'] + '''].[dbo].[Config]([FileName]
                               ,[Creation]
@@ -461,12 +459,11 @@ def check_and_save_uuid_table():
     cursor.close()
     db.close()
 
-
-    with open(parameters['dumps_catalog']+'\\uuid_dict.dat','wb') as dump_file:
+    with open(parameters['dumps_catalog'] + '\\uuid_dict.dat', 'wb') as dump_file:
         pickle.dump(uuid_dict, dump_file)
 
-    with open(parameters['dumps_catalog']+'\\meta_table_list.dat', 'wb') as dump_file:
-        pickle.dump(meta_table_list,dump_file)
+    with open(parameters['dumps_catalog'] + '\\meta_table_list.dat', 'wb') as dump_file:
+        pickle.dump(meta_table_list, dump_file)
 
     if not len(unknown_uuid) == 0:
         log_and_raise_exc('total-' + repr(len(unknown_uuid)) + ', first 10-' + repr(unknown_uuid[:10]))
@@ -508,6 +505,7 @@ def get_changed_blocks():
 
     logging.debug('find blocks-' + str(len(res)) + 'type- ' + repr(type(res)))
     return [x[0] for x in res]
+
 
 def copy_changed_bloсks(source_table, dest_table, modified_blocks):
     '''
@@ -674,7 +672,6 @@ def cat_configuration_xml(modified_objects, all_dependencies):
 
     substitute_string = '<ChildObjects>\n'
     substitute_string += parameters.get('conf_always_included', '') + '\n'
-    #todo: сделать стили через зависимости
 
     for modified_object in modified_objects:
         names_list = modified_object.split('.')
@@ -727,7 +724,7 @@ def dots2folders(source_catalog, destination_catalog, files_list=None):
     превращается в C:\Buh_korp\ChartOfCalculationTypes\Удержания\Form\ФормаСписка\Form\Module.txt
     """
     logging.debug('========dots2folders========')
-    logging.debug('source_catalog - '+source_catalog+', destination_catalog - '+destination_catalog)
+    logging.debug('source_catalog - ' + source_catalog + ', destination_catalog - ' + destination_catalog)
     begin_time = datetime.datetime.now()
 
     it_is_full_copying = files_list is None
@@ -940,16 +937,16 @@ def save_1c():
 
     tell2git_im_busy('проводится частичная выгрузка конфигурации')
 
-    with open(parameters['dumps_catalog']+'\\meta_table_list.dat', 'rb') as dump_file:
+    with open(parameters['dumps_catalog'] + '\\meta_table_list.dat', 'rb') as dump_file:
         meta_table_list.extend(pickle.load(dump_file))
 
-    with open(parameters['dumps_catalog']+'\\uuid_dict.dat', 'rb') as dump_file:
+    with open(parameters['dumps_catalog'] + '\\uuid_dict.dat', 'rb') as dump_file:
         uuid_dict.update(pickle.load(dump_file))
 
     modified_blocks = get_changed_blocks()
     modified_objects = get_changed_objects(modified_blocks)
-    logging.debug('modified_blocks '+repr(modified_blocks))
-    logging.debug('modified_objects '+repr(modified_objects))
+    logging.debug('modified_blocks ' + repr(modified_blocks))
+    logging.debug('modified_objects ' + repr(modified_objects))
 
     if len(modified_objects) == 0:
         logging.debug('nothing to export')
@@ -959,7 +956,7 @@ def save_1c():
     tell2git_im_busy(modified_objects)
 
     if need_full_export(modified_objects):
-        logging.debug('need full export:' + repr(len(modified_objects)))
+        logging.debug('need full export')
         #full_export()
         return
 
@@ -985,7 +982,7 @@ def save_1c():
     export_1c()
 
     #Повторно получаем список файлов уже из  рабочего каталога
-    modified_files = get_changed_files_list(modified_objects,parameters['work_catalog'])
+    modified_files = get_changed_files_list(modified_objects, parameters['work_catalog'])
     dots2folders(parameters['work_catalog'], parameters['git_work_catalog'], modified_files)
 
     copy_changed_bloсks('[' + parameters['1c_shad_base'] + '].[dbo].[ConfigSave]',
@@ -1032,14 +1029,14 @@ def run_tst_func():
 
 
 if __name__ == '__main__':
-
     format_string = u'%(filename)s[LINE:%(lineno)d]# %(levelname)-8s [%(asctime)s]  %(message)s'
-    file_name = os.path.join(os.path.dirname(sys.argv[2])+'\\logs\\work_log_' + datetime.datetime.now().strftime("%d_%m_%Y_%H_%M") + '.txt')
+    file_name = os.path.join(os.path.dirname(sys.argv[2]) + '\\logs\\work_log_' + datetime.datetime.now().strftime(
+        "%d_%m_%Y_%H_%M") + '.txt')
     logging.basicConfig(filename=file_name, level=logging.DEBUG, format=format_string)
+
 
     #todo: проверить что 3 аргументом идет именно *.cfg
     read_ini_file(sys.argv[2])
-
 
     if sys.argv[1] == '-t':
         run_tst_func()
