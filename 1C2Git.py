@@ -21,7 +21,7 @@ meta_table_list = []
 uuid_dict = {}
 served_classes = ['CommonModule', 'Constant', 'DataProcessor', 'Enum', 'Report', 'WebService', 'XDTOPackage',
                   'Role']  #tested
-served_classes.extend(['Catalog'])  #testing
+served_classes.extend(['Catalog','StyleItem'])  #testing
 
 # test examples
 class TestSomething:
@@ -241,9 +241,12 @@ def read_oblect_uuid_and_dependencies(metadata_item):
             dep_list.extend(fops_list)
 
         #стили
+        metadata_list = list([x['type']+'.'+x['name'] for x in meta_table_list])
+        #todo: может: удобно сделать глобальный список?
         with open(depended_file, 'r', -1, 'UTF-8') as opened_file:
-            styles_list = list([x.text.replace('>style:', 'StyleItem.')[:-1] for x in
-                                re.findall('>style:.*<', opened_file.read())])
+            styles_list = list([x.replace('>style:', 'StyleItem.')[:-1]
+                                for x in re.findall('>style:.*<', opened_file.read())
+                                if x.replace('>style:', 'StyleItem.')[:-1] in metadata_list])
 
             if not len(styles_list) == 0:
                 styles_list = unique_list(styles_list)
@@ -1001,15 +1004,18 @@ def run_tst_func():
 
     with open(parameters['dumps_catalog'] + '\\meta_table_list.dat', 'rb') as dump_file:
         meta_table_list.extend(pickle.load(dump_file))
-    v = [x for x in meta_table_list if x['name'] == 'Банки']
+    v = [x for x in meta_table_list if x['name'] == 'ВариантыОтчетов']
     print(v)
+    metadata_list = list([x['type']+'.'+x['name'] for x in meta_table_list if x['type'] == 'StyleItem'])
+    print(metadata_list)
+
 
     '''
     logging.debug('обновляем таблицу соответствий метаданных')
     read_meta_table()
     read_all_uuid()
-    check_and_save_uuid_table() '''
-    #dots2folders(parametrs['work_catalog'], parametrs['git_work_catalog'])
+    check_and_save_uuid_table()
+    #dots2folders(parametrs['work_catalog'], parametrs['git_work_catalog'])'''
 
     '''
     read_meta_table()
@@ -1022,11 +1028,11 @@ def run_tst_func():
     #logging.error(repr(parameters))
 
     #tell2git_im_free()
-
-    '''with open(get_param('script_catalog') + '\\uuid_dict.dat', 'rb') as dump_file:
+    '''
+    with open(get_param('dumps_catalog') + '\\uuid_dict.dat', 'rb') as dump_file:
         uuid_dict.update(pickle.load(dump_file))
-    print(uuid_dict['9ed016b2-2a4a-43a1-a336-6b13d68b3d0a'])'''
-
+    print(uuid_dict['9ed016b2-2a4a-43a1-a336-6b13d68b3d0a'])
+    '''
 
 if __name__ == '__main__':
     format_string = u'%(filename)s[LINE:%(lineno)d]# %(levelname)-8s [%(asctime)s]  %(message)s'
