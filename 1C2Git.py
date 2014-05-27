@@ -1022,38 +1022,18 @@ def run_tst_func():
     #full_export()
     #save_1c()
     #import_1c()
+    logging.debug('========save_1c========')
+    begin_time = datetime.datetime.now()
 
-    with open(parameters['dumps_catalog'] + '\\meta_table_list.dat', 'rb') as dump_file:
-        meta_table_list.extend(pickle.load(dump_file))
-    v = [x for x in meta_table_list if x['name'] == 'ВариантыОтчетов']
-    print(v)
-    metadata_list = list([x['type']+'.'+x['name'] for x in meta_table_list if x['type'] == 'StyleItem'])
-    print(metadata_list)
+    all_dot_files = os.listdir(parameters['full_text_catalog'])
+    for f in all_dot_files:
+        file=open(os.path.join(parameters['full_text_catalog'], f),'rb')
+        file1_hash = hashlib.sha1(file.read()).hexdigest()
 
 
-    '''
-    logging.debug('обновляем таблицу соответствий метаданных')
-    read_meta_table()
-    read_all_uuid()
-    check_and_save_uuid_table()
-    #dots2folders(parametrs['work_catalog'], parametrs['git_work_catalog'])'''
+    logging.debug('время выполнения run_tst_func - ' + str(datetime.datetime.now() - begin_time))
 
-    '''
-    read_meta_table()
-    read_all_uuid()
-    check_and_save_uuid_table()'''
 
-    #logging.debug('обновляем папку стабов')
-    #fill_dummy_catalog()
-
-    #logging.error(repr(parameters))
-
-    #tell2git_im_free()
-    '''
-    with open(get_param('dumps_catalog') + '\\uuid_dict.dat', 'rb') as dump_file:
-        uuid_dict.update(pickle.load(dump_file))
-    print(uuid_dict['9ed016b2-2a4a-43a1-a336-6b13d68b3d0a'])
-    '''
 
 if __name__ == '__main__':
     format_string = u'%(filename)s[LINE:%(lineno)d]# %(levelname)-8s [%(asctime)s]  %(message)s'
