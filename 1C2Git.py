@@ -12,6 +12,7 @@ import pickle
 import shutil
 import re
 import logging
+import subprocess
 
 __author__ = 'jgoncharova'
 
@@ -1017,6 +1018,31 @@ def save_1c():
 
     logging.debug('время выполнения save_1c - ' + str(datetime.datetime.now() - begin_time))
 
+def load_1c():
+    '''
+    при смене ветки в git загружает новое содержимое в 1С
+    '''
+    logging.debug('========load_1c========')
+    begin_time = datetime.datetime.now()
+
+    with open(os.path.join(parameters['log_folder'],'branches.log')) as branches_log:
+        last_brunch = branches_log.read().split('\n')[-1:]
+    print(last_brunch)
+
+    with open(os.path.join(parameters['git_work_catalog'],'.git', 'HEAD')) as branches_log:
+        new_brunch = branches_log.read().split('\n')[0].replace('ref: refs/heads/','')
+    print(new_brunch)
+
+    output = subprocess.check_output(["C:\Program Files (x86)\Git\\bin\git.exe", '-C', parameters['git_work_catalog'],
+                                      'diff', 'HEAD', 'master', '--name-only']).decode()
+    diff = [os.path.join(parameters['git_work_catalog'],x.replace('/','.')) for x in output.split('\n')[:-1]]
+    print(diff)
+
+    with open(os.path.join(parameters['log_folder'],'branches.log'),'w') as branches_log:
+        branches_log.write(new_brunch)
+
+    logging.debug('время выполнения load_1c - ' + str(datetime.datetime.now() - begin_time))
+
 
 def run_tst_func():
     #full_export()
@@ -1025,14 +1051,50 @@ def run_tst_func():
     logging.debug('========save_1c========')
     begin_time = datetime.datetime.now()
 
-    all_dot_files = os.listdir(parameters['full_text_catalog'])
-    for f in all_dot_files:
-        file=open(os.path.join(parameters['full_text_catalog'], f),'rb')
-        file1_hash = hashlib.sha1(file.read()).hexdigest()
+
+    #пробуем вытащить разницу из git
+    # head_text = open(os.path.join(parameters['git_work_catalog'], '.git', 'HEAD')).read()
+    # path_to_to_head=head_text.replace('ref: ', '').replace('\n','')
+    # path_to_last_commit = os.path.join(parameters['git_work_catalog'], '.git', *path_to_to_head.split('/'))
+    # last_commit_hash = open(path_to_last_commit).read()
+    # print(4,last_commit_hash)
+    #
+    # p1 = subprocess.Popen(["echo", "Hello World!"], stdout=subprocess.PIPE)
+    # output = p1.communicate()[0]
+    # print(output)
+    #
+    #
+    # # output = subprocess.check_output(['C:\Program Files (x86)\Git\\bin\git.exe', 'cat-file', '-p', 'HEAD'])
+    # # output_decoded = output.decode("utf-8")
+    # # print(output_decoded)
+
+    #сравниваем sha-1 git_work и full_text - долго
+    # git_work_catalog = parameters['git_work_catalog']
+    # full_text_catalog = parameters['full_text_catalog']
+    #
+    # for root, dirs, files in os.walk(git_work_catalog):
+    #     for file in files:
+    #         if ('.git' in root
+    #             or '.git' in file
+    #             or 'README.md' in file):
+    #             continue
+    #         with open(os.path.join(root, file), "rb") as f:
+    #             git_hash = hashlib.sha1(f.read()).hexdigest()
+    #         dotted_name = os.path.join(full_text_catalog,
+    #                                 os.path.join(root, file).replace(git_work_catalog+'\\', '').replace('\\', '.'))
+    #         with open(os.path.join(dotted_name), "rb") as f:
+    #             c_hash = hashlib.sha1(f.read()).hexdigest()
+    #         if not git_hash == c_hash:
+    #             print(dotted_name)
 
 
-    logging.debug('время выполнения run_tst_func - ' + str(datetime.datetime.now() - begin_time))
+    # all_dot_files = os.listdir(parameters['full_text_catalog'])
+    # cat = parameters['full_text_catalog']
+    # for f in all_dot_files:
+    #     with open(os.path.join(cat, f),'rb') as file:
+    #         file1_hash = hashlib.sha1(file.read()).hexdigest()
 
+    print('время выполнения run_tst_func - ' + str(datetime.datetime.now() - begin_time))
 
 
 if __name__ == '__main__':
@@ -1055,9 +1117,13 @@ if __name__ == '__main__':
         print('export from 1C to git')
         print('-s: partially export to git')
         print('-sa: full export to git')
+        #print('-l: partially import to 1C')
+        print('-la: full import to 1C')
         print('see logs in ' + parameters['log_folder'].replace(u'\\\\', '\\'))
-    elif sys.argv[1] == '-la':  #save all
+    elif sys.argv[1] == '-la':  #load all
         full_import()
+    elif sys.argv[1] == '-l':  #load
+        load_1c()
     else:
         logging.error('wrong parameters ' + sys.argv[1:])
     
