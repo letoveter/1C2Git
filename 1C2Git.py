@@ -322,7 +322,6 @@ def fill_dummy_catalog():
     begin_time = datetime.datetime.now()
     for meta_object in meta_table_list:
 
-
         object_file_name = parameters['full_text_catalog'] \
                            + '\\' + meta_object['type'] \
                            + '.' + meta_object['name'] + '.xml'
@@ -338,24 +337,27 @@ def fill_dummy_catalog():
             if meta_object['type'] == 'Enum':
                 unwanted_nodes = []
             else:
-                unwanted_nodes = ['ChildObjects',
-                                  'DefaultObjectForm',
-                                  'DefaultListForm',
-                                  'DefaultChoiceForm',
-                                  'DefaultFolderForm',
-                                  'DefaultFolderChoiceForm',
-                                  'RegisterRecords',
-                                  'Characteristics',
-                                  'Type',
-                                  'CharacteristicExtValues',
-                                  'Location',
-                                  'Content']
+                unwanted_nodes = [{'node': 'ChildObjects'},
+                                  {'node': 'DefaultObjectForm'},
+                                  {'node': 'DefaultListForm'},
+                                  {'node': 'DefaultChoiceForm'},
+                                  {'node': 'DefaultFolderForm'},
+                                  {'node': 'DefaultFolderChoiceForm'},
+                                  {'node': 'RegisterRecords'},
+                                  {'node': 'Characteristics'},
+                                  {'node': 'Type', 'exclude': 'StyleItem'},
+                                  {'node': 'CharacteristicExtValues'},
+                                  {'node': 'Location'},
+                                  {'node': 'Content'}]
 
             for unwanted_node in unwanted_nodes:
-                find_res = re.search('<' + unwanted_node + '>.*</' + unwanted_node + '>', file_str,
-                                     re.DOTALL)  #TODO: заменить грамотной записью xml!!
+                if not unwanted_node.get('exclude',None) is None and meta_object['type'] in unwanted_node['exclude']:
+                    continue
+
+                find_res = re.search('<' + unwanted_node['node'] + '>.*</' + unwanted_node['node'] + '>', file_str,
+                                     re.DOTALL)
                 if not find_res is None:
-                    file_str = file_str.replace(find_res.group(), '<' + unwanted_node + '/>')
+                    file_str = file_str.replace(find_res.group(), '<' + unwanted_node['node'] + '/>')
 
             data_file = open(object_new_file_name, 'w', -1, 'UTF-8')
             data_file.write(file_str)
@@ -781,7 +783,28 @@ def dots2folders(source_catalog, destination_catalog, files_list=None):
 
 
 def folder2dots(source_catalog, destination_catalog):
-    pass
+    """
+    копирует файлы из source_catalog в destination_catalog
+    параллельно превращая иерархию папок в имя файла:
+    C:\Buh_korp\ChartOfCalculationTypes\Удержания\Form\ФормаСписка\Form\Module.txt
+    превращается в C:\1C2Git_files\full_text\ChartOfCalculationTypes.Удержания.Form.ФормаСписка.Form.Module.txt
+    """
+    logging.debug('========folder2dots========')
+    logging.debug('source_catalog - ' + source_catalog + ', destination_catalog - ' + destination_catalog)
+    begin_time = datetime.datetime.now()
+
+    for root, dirs, files in os.walk(source_catalog):
+        for file in files:
+            if ('.git' in root
+                or '.git' in file
+                or 'Readme.md' in file):
+                continue
+            full_old_name = os.path.join(root, file)
+            full_new_name = os.path.join(destination_catalog,
+                                    full_old_name.replace(source_catalog+'\\', '').replace('\\', '.'))
+            shutil.copy(full_old_name, full_new_name)
+
+    logging.debug('время выполнения folder2dots - ' + str(datetime.datetime.now() - begin_time))
 
 
 def copy_catalog(source_dir, destination_dir):
@@ -833,9 +856,7 @@ def import_1c():
         output_str = ''
 
     if status != 0:
-        logging.error('fail to import files to 1C: ' + output_str)
-
-    assert status == 0, 'fail to import files to 1C: ' + output_str
+        log_and_raise_exc('fail to import files to 1C: ' + output_str)
 
 
 def export_1c():
@@ -968,11 +989,11 @@ def save_1c():
     logging.debug('empty folder ' + parameters['work_catalog'])
     simply_empty_dir(parameters['work_catalog'])
 
-    move_changed_files_to_wd(modified_files)
-
     move_always_included()
 
     all_dependencies = move_dummy_objects_to_wd(modified_objects)
+
+    move_changed_files_to_wd(modified_files)
 
     cat_configuration_xml(modified_objects, all_dependencies)
 
@@ -990,7 +1011,7 @@ def save_1c():
 
     copy_changed_bloсks('[' + parameters['1c_shad_base'] + '].[dbo].[ConfigSave]',
                         '[' + parameters['1c_shad_base'] + '].[dbo].[Config]',
-                        modified_blocks)
+                        modified_blocks) #todo: что хотел сказать художник???
 
     tell2git_im_free()
 
