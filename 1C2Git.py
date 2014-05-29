@@ -513,7 +513,7 @@ def get_changed_blocks():
     return [x[0] for x in res]
 
 
-def copy_changed_bloсks(source_table, dest_table, modified_blocks):
+def copy_changed_bloсks(source_table, dest_table, modified_blocks, use_like=False):
     '''
     копирует измененные блоки данных из dev в shad
     '''
@@ -523,8 +523,14 @@ def copy_changed_bloсks(source_table, dest_table, modified_blocks):
     db = connect2db()
     cursor = db.cursor()
 
-    str_list = list_2SQL_list(modified_blocks)
-    delete_text = 'DELETE FROM ' + dest_table + ' WHERE FileName IN (' + str_list + ')'
+    if use_like:
+        logging.debug(repr(modified_blocks))
+        str_condition = 'or'.join([" (FileName LIKE \'"+x+"%\') " for x in modified_blocks if not x is None])
+    else:
+        str_condition = "FileName IN (\'" + "\',\'".join(modified_blocks) + "\')"
+
+    logging.debug('changed blocks: '+repr(str_condition))
+    delete_text = 'DELETE FROM ' + dest_table + ' WHERE ' + str_condition
     insert_text = '''INSERT INTO ''' + dest_table + '''
                             ([FileName]
                               ,[Creation]
@@ -540,8 +546,8 @@ def copy_changed_bloсks(source_table, dest_table, modified_blocks):
                               ,[DataSize]
                               ,[BinaryData]
                               ,[PartNo]
-                    FROM ''' + source_table + ''' AS dev
-                    WHERE dev.FileName IN (''' + str_list + ''')'''
+                    FROM ''' + source_table + '''
+                    WHERE''' + str_condition
 
     try:
         res = cursor.execute(delete_text)
@@ -555,7 +561,7 @@ def copy_changed_bloсks(source_table, dest_table, modified_blocks):
     db.close()
 
 
-def list_2SQL_list(items):
+def list_2SQL_list(items, var):
     sqllist = "\'" + "\',\'".join(items) + "\'"
     return sqllist
 
@@ -591,7 +597,7 @@ def get_changed_objects(changed_blocks):
 
 #++ work with filesystem
 
-def move_changed_files_to_wd(modified_files):
+def move_changed_files_to_wd(modified_files, **kargs:{}):
     '''
     собирает файлы, относящиеся к измененным блокам
     и копирует их в рабочий каталог
@@ -600,8 +606,13 @@ def move_changed_files_to_wd(modified_files):
     logging.debug('========move_changed_files_to_wd========')
 
     for file in modified_files:
-        shutil.copy(file, parameters['work_catalog'] + '\\' + os.path.basename(file))
-        logging.debug('copy ' + file + ' to ' + parameters['work_catalog'])
+        if kargs:
+            new_file_name = file.replace(kargs['catalog']+'\\', '').replace(kargs['old_sep'],kargs['new_sep'])
+        else:
+            new_file_name = os.path.basename(file)
+
+        shutil.copy(file, os.path.join(parameters['work_catalog'],new_file_name))
+        logging.debug('copy ' + file + ' to ' + parameters['work_catalog']+'\\'+new_file_name)
 
 
 def move_dummy_objects_to_wd(modified_objects):
@@ -1019,6 +1030,7 @@ def save_1c():
 
     logging.debug('время выполнения save_1c - ' + str(datetime.datetime.now() - begin_time))
 
+
 def load_1c():
     '''
     при смене ветки в git загружает новые данные в 1С
@@ -1041,7 +1053,9 @@ def load_1c():
 
     output = subprocess.check_output(["C:\Program Files (x86)\Git\\bin\git.exe", '-C', parameters['git_work_catalog'],
                                       'diff', 'HEAD', last_brunch, '--name-only']).decode()
+    logging.debug(repr(output))
     lines_list = output.split('\n')[:-1]
+    logging.debug(repr(lines_list))
     modified_files = [os.path.join(parameters['git_work_catalog'],x.replace('/', '\\')) for x in lines_list]
     logging.debug('modified_files ' + repr(modified_files))
 
@@ -1062,17 +1076,22 @@ def load_1c():
     #move_always_included()
 
     #todo:  динамический поиск зависимостей
-    #todo: при необходимости - динамическая геренация болванки (dummy)
+    #todo: при необходимости - динамическая генерация болванки (dummy)
     all_dependencies = move_dummy_objects_to_wd(modified_objects)
 
     move_changed_files_to_wd(depended_files)
-    move_changed_files_to_wd(modified_files)
+    move_changed_files_to_wd(modified_files,catalog=parameters['git_work_catalog'], old_sep='\\', new_sep='.')
 
     cat_configuration_xml(modified_objects, all_dependencies)
 
     import_1c()
 
-    #todo: скопировать измененные блоки
+    copy_changed_bloсks('[' + parameters['1c_shad_base'] + '].[dbo].[ConfigSave]',
+                        '[' + parameters['1c_dev_base'] + '].[dbo].[ConfigSave]',
+                        [get_file_uuid(file) for file in depended_files if file[-4:] == '.xml'],
+                        True)
+
+    #todo: перезапустить конфигуратор
 
     with open(os.path.join(parameters['log_folder'],'branches.log'),'w') as branches_log:
         branches_log.write(new_brunch)
