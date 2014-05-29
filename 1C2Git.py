@@ -935,7 +935,7 @@ def full_export():
 
 
 def unique_list(our_list):
-    return {}.fromkeys(our_list).keys()
+    return list({}.fromkeys(our_list).keys())
 
 
 def need_full_export(modified_objects):
@@ -990,8 +990,9 @@ def save_1c():
     logging.debug('empty folder ' + parameters['work_catalog'])
     simply_empty_dir(parameters['work_catalog'])
 
-    move_always_included()
+    #move_always_included()
 
+    #todo: динамически делать недостающие болванки
     all_dependencies = move_dummy_objects_to_wd(modified_objects)
 
     move_changed_files_to_wd(modified_files)
@@ -1020,23 +1021,58 @@ def save_1c():
 
 def load_1c():
     '''
-    при смене ветки в git загружает новое содержимое в 1С
+    при смене ветки в git загружает новые данные в 1С
     '''
     logging.debug('========load_1c========')
     begin_time = datetime.datetime.now()
 
+    with open(parameters['dumps_catalog'] + '\\meta_table_list.dat', 'rb') as dump_file:
+        meta_table_list.extend(pickle.load(dump_file))
+
+    with open(parameters['dumps_catalog'] + '\\uuid_dict.dat', 'rb') as dump_file:
+        uuid_dict.update(pickle.load(dump_file))
+
+
     with open(os.path.join(parameters['log_folder'],'branches.log')) as branches_log:
-        last_brunch = branches_log.read().split('\n')[-1:]
-    print(last_brunch)
+        last_brunch = branches_log.read()
 
     with open(os.path.join(parameters['git_work_catalog'],'.git', 'HEAD')) as branches_log:
         new_brunch = branches_log.read().split('\n')[0].replace('ref: refs/heads/','')
-    print(new_brunch)
 
     output = subprocess.check_output(["C:\Program Files (x86)\Git\\bin\git.exe", '-C', parameters['git_work_catalog'],
-                                      'diff', 'HEAD', 'master', '--name-only']).decode()
-    diff = [os.path.join(parameters['git_work_catalog'],x.replace('/','.')) for x in output.split('\n')[:-1]]
-    print(diff)
+                                      'diff', 'HEAD', last_brunch, '--name-only']).decode()
+    lines_list = output.split('\n')[:-1]
+    modified_files = [os.path.join(parameters['git_work_catalog'],x.replace('/', '\\')) for x in lines_list]
+    logging.debug('modified_files ' + repr(modified_files))
+
+    modified_objects = unique_list(['.'.join(x.split('/')[:2]) for x in lines_list])
+    logging.debug('modified_objects ' + repr(modified_objects))
+
+    #todo: если изменен configuration.xml - полная загрузка
+
+    if len(modified_objects) == 0:
+        logging.debug('nothing to export')
+        return
+
+    depended_files = get_changed_files_list(modified_objects, parameters['full_text_catalog'])
+    logging.debug('depended_files ' + repr(depended_files))
+
+    simply_empty_dir(parameters['work_catalog'])
+
+    #move_always_included()
+
+    #todo:  динамический поиск зависимостей
+    #todo: при необходимости - динамическая геренация болванки (dummy)
+    all_dependencies = move_dummy_objects_to_wd(modified_objects)
+
+    move_changed_files_to_wd(depended_files)
+    move_changed_files_to_wd(modified_files)
+
+    cat_configuration_xml(modified_objects, all_dependencies)
+
+    import_1c()
+
+    #todo: скопировать измененные блоки
 
     with open(os.path.join(parameters['log_folder'],'branches.log'),'w') as branches_log:
         branches_log.write(new_brunch)
