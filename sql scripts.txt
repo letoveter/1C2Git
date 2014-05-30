@@ -18,5 +18,3 @@ GO
                               ,[PartNo]
                     FROM [1S-MSK-4Git-DEV].[dbo].[Config] 
 					
-cd c:\1cunit\1c2git\
-1c2git.py -s c:\1cunit\1c2git\1c2git.cfg

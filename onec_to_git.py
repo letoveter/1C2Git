@@ -24,22 +24,6 @@ served_classes = ['CommonModule', 'Constant', 'DataProcessor', 'Enum', 'Report',
                   'Role']  #tested
 served_classes.extend(['Catalog','StyleItem'])  #testing
 
-# test examples
-class TestSomething:
-    def setup(self):
-        print('setup')
-
-    def teardown(self):
-        print('teardown')
-
-    def test_one(self):
-        assert True
-
-    def test_two(self):
-        assert False
-
-def test_three():
-    assert True
 
 #-- common procs
 
