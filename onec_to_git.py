@@ -12,27 +12,20 @@ import pickle
 import shutil
 import re
 import logging
+import subprocess
 
 __author__ = 'jgoncharova'
 
+# main collections
 parameters = {}
 meta_table_list = []
 uuid_dict = {}
+served_classes = ['CommonModule', 'Constant', 'DataProcessor', 'Enum', 'Report', 'WebService', 'XDTOPackage',
+                  'Role']  #tested
+served_classes.extend(['Catalog','StyleItem'])  #testing
 
-class TestSomething:
-    def setup(self):
-        print('setup')
-    def teardown(self):
-        print('teardown')
 
-    def test_one(self):
-        assert True
-
-    def test_two(self):
-        assert False
-
-def test_three():
-    assert True
+#-- common procs
 
 def read_ini_file(file_name):
     """
@@ -40,7 +33,7 @@ def read_ini_file(file_name):
 	1C2Git.cfg не коммитится!!
 	"""
     config_raw = configparser.ConfigParser()
-    config_raw.read(file_name,'UTF-8')
+    config_raw.read(file_name, 'UTF-8')
     for section in config_raw.sections():
         for parametr in config_raw.items(section):
             if parametr[0][-4:] == 'list':
@@ -54,14 +47,10 @@ def read_ini_file(file_name):
         log_and_raise_exc('Не смогли прочитать настройки из 1C2Git.cfg')
 
 
-#-- ini procs
-
-#++ common procs
-
 def get_param(param_name):
     param_value = parameters.get(param_name, None)
     if param_value is None:
-        raise 'Не найден в конфигурации параметр ' + param_name
+        log_and_raise_exc('Не найден в конфигурации параметр ' + param_name)
 
     return param_value
 
@@ -76,9 +65,7 @@ def simply_empty_dir(path):
             logging.error("can't delete " + the_file)
 
 
-#-- common procs
-
-#++ reading configuration info
+#reading configuration info
 
 def read_meta_object(node, type):
     elements_list = node.findall("{http://v8.1c.ru/8.3/MDClasses}" + type)
@@ -193,7 +180,8 @@ def read_oblect_uuid_and_dependencies(metadata_item):
 
     #вытягиваем xdto пакеты из веб-сервисов
     if metadata_item['type'] == 'WebService':
-        for xdto_element in [x.text for x in root.findall('.//{http://v8.1c.ru/8.3/xcf/readable}value') if 'XDTOPackage.' in x.text]:
+        for xdto_element in [x.text for x in root.findall('.//{http://v8.1c.ru/8.3/xcf/readable}value') if
+                             'XDTOPackage.' in x.text]:
             if not xdto_element in dep_list:
                 dep_list.append(xdto_element)
 
@@ -208,12 +196,13 @@ def read_oblect_uuid_and_dependencies(metadata_item):
                         if not sstore_element in dep_list:
                             dep_list.append(sstore_element)
         except:
-         logging.error('trouble with '+repr(metadata_item)+', '+repr(finded_variants_storage))
+            logging.error('trouble with ' + repr(metadata_item) + ', ' + repr(finded_variants_storage))
 
 
     #теперь придется перебрать все зависимые файлы и вытащить оттуда ссылки
-    depended_files_list = glob.glob(parameters['full_text_catalog'] + '\\' + metadata_item['type'] + '.' + metadata_item[
-        'name'] + '*.xml')
+    depended_files_list = glob.glob(
+        parameters['full_text_catalog'] + '\\' + metadata_item['type'] + '.' + metadata_item[
+            'name'] + '*.xml')
     for depended_file in depended_files_list:
         depended_file_tree = etree.parse(depended_file)
         depended_root = depended_file_tree.getroot()
@@ -223,7 +212,8 @@ def read_oblect_uuid_and_dependencies(metadata_item):
                          if
                          x.text[:3] == 'cfg' and not x.text == 'cfg:' + metadata_item['type'] + 'Ref.' + metadata_item[
                              'name']])
-        if not len(ref_list) == 0: dep_list.extend(ref_list)
+        if not len(ref_list) == 0:
+            dep_list.extend(ref_list)
 
         #выдергиваем роли
         role_list = list([x.attrib['name'] for x in depended_root.findall('.//*[@name]') if 'Role' in x.attrib['name']])
@@ -232,15 +222,20 @@ def read_oblect_uuid_and_dependencies(metadata_item):
         #Функциональные опции
         fops_list = list(
             [x.text for x in depended_root.findall('.//{http://v8.1c.ru/8.3/xcf/logform}FunctionalOptions/*')])
-        if not len(fops_list) == 0: dep_list.extend(fops_list)
+        if not len(fops_list) == 0:
+            dep_list.extend(fops_list)
 
         #стили
-        styles_list = list([x.text.replace('style:', 'StyleItem.') for x in
-                            depended_root.findall('.//{http://v8.1c.ru/8.1/data-composition-system/core}value') if
-                            not x.text is None and 'style:' in x.text])
-        #todo: безумно много времени
-        if not len(styles_list) == 0:
-            dep_list.extend(styles_list)
+        metadata_list = list([x['type']+'.'+x['name'] for x in meta_table_list])
+        #todo: может: удобно сделать глобальный список?
+        with open(depended_file, 'r', -1, 'UTF-8') as opened_file:
+            styles_list = list([x.replace('>style:', 'StyleItem.')[:-1]
+                                for x in re.findall('>style:.*<', opened_file.read())
+                                if x.replace('>style:', 'StyleItem.')[:-1] in metadata_list])
+
+            if not len(styles_list) == 0:
+                styles_list = unique_list(styles_list)
+                dep_list.extend(styles_list)
 
     metadata_item['dependencies'] = dep_list
 
@@ -312,7 +307,6 @@ def fill_dummy_catalog():
     begin_time = datetime.datetime.now()
     for meta_object in meta_table_list:
 
-
         object_file_name = parameters['full_text_catalog'] \
                            + '\\' + meta_object['type'] \
                            + '.' + meta_object['name'] + '.xml'
@@ -328,24 +322,27 @@ def fill_dummy_catalog():
             if meta_object['type'] == 'Enum':
                 unwanted_nodes = []
             else:
-                unwanted_nodes = ['ChildObjects',
-                                  'DefaultObjectForm',
-                                  'DefaultListForm',
-                                  'DefaultChoiceForm',
-                                  'DefaultFolderForm',
-                                  'DefaultFolderChoiceForm',
-                                  'RegisterRecords',
-                                  'Characteristics',
-                                  'Type',
-                                  'CharacteristicExtValues',
-                                  'Location',
-                                  'Content']
+                unwanted_nodes = [{'node': 'ChildObjects'},
+                                  {'node': 'DefaultObjectForm'},
+                                  {'node': 'DefaultListForm'},
+                                  {'node': 'DefaultChoiceForm'},
+                                  {'node': 'DefaultFolderForm'},
+                                  {'node': 'DefaultFolderChoiceForm'},
+                                  {'node': 'RegisterRecords'},
+                                  {'node': 'Characteristics'},
+                                  {'node': 'Type', 'exclude': 'StyleItem'},
+                                  {'node': 'CharacteristicExtValues'},
+                                  {'node': 'Location'},
+                                  {'node': 'Content'}]
 
             for unwanted_node in unwanted_nodes:
-                find_res = re.search('<' + unwanted_node + '>.*</' + unwanted_node + '>', file_str,
-                                     re.DOTALL)  #TODO: заменить грамотной записью xml!!
+                if not unwanted_node.get('exclude',None) is None and meta_object['type'] in unwanted_node['exclude']:
+                    continue
+
+                find_res = re.search('<' + unwanted_node['node'] + '>.*</' + unwanted_node['node'] + '>', file_str,
+                                     re.DOTALL)
                 if not find_res is None:
-                    file_str = file_str.replace(find_res.group(), '<' + unwanted_node + '/>')
+                    file_str = file_str.replace(find_res.group(), '<' + unwanted_node['node'] + '/>')
 
             data_file = open(object_new_file_name, 'w', -1, 'UTF-8')
             data_file.write(file_str)
@@ -366,7 +363,7 @@ def tell2git_im_busy(message):
         elif type(message) == list:
             mark_file.write('Состав объектов для выгрузки:')
             for m_obj in message:
-                mark_file.write(m_obj)
+                mark_file.write(m_obj + ' ')
         else:
             raise Exception("Неверный тип message")
 
@@ -387,11 +384,10 @@ def log_and_raise_exc(exception_text):
     raise Exception(exception_text)
 
 
-def run_sql(db,cursor, query_text, check_result = False):
-
+def run_sql(db, cursor, query_text, check_result=False):
     try:
         res = cursor.execute(query_text)
-        logging.debug('RUN ' + query_text + '\n Result:' + repr(res.rowcount)+' rows')
+        logging.debug('RUN ' + query_text + '\n Result:' + repr(res.rowcount) + ' rows')
     except:
         db.close()
         log_and_raise_exc('ERROR IN ' + query_text)
@@ -402,7 +398,6 @@ def run_sql(db,cursor, query_text, check_result = False):
 
 
 def copy_config():
-
     logging.debug('========copy_config========')
     begin_time = datetime.datetime.now()
 
@@ -410,10 +405,10 @@ def copy_config():
     cursor = db.cursor()
 
     query_text = 'DELETE FROM [' + parameters['1c_shad_base'] + '].[dbo].[Config]'
-    run_sql(db,cursor, query_text, True)
+    run_sql(db, cursor, query_text, True)
 
     query_text = 'DELETE FROM [' + parameters['1c_shad_base'] + '].[dbo].[ConfigSave]'
-    run_sql(db,cursor, query_text)
+    run_sql(db, cursor, query_text)
 
     query_text = '''INSERT INTO [''' + parameters['1c_shad_base'] + '''].[dbo].[Config]([FileName]
                               ,[Creation]
@@ -454,12 +449,11 @@ def check_and_save_uuid_table():
     cursor.close()
     db.close()
 
-
-    with open(parameters['dumps_catalog']+'\\uuid_dict.dat','wb') as dump_file:
+    with open(parameters['dumps_catalog'] + '\\uuid_dict.dat', 'wb') as dump_file:
         pickle.dump(uuid_dict, dump_file)
 
-    with open(parameters['dumps_catalog']+'\\meta_table_list.dat', 'wb') as dump_file:
-        pickle.dump(meta_table_list,dump_file)
+    with open(parameters['dumps_catalog'] + '\\meta_table_list.dat', 'wb') as dump_file:
+        pickle.dump(meta_table_list, dump_file)
 
     if not len(unknown_uuid) == 0:
         log_and_raise_exc('total-' + repr(len(unknown_uuid)) + ', first 10-' + repr(unknown_uuid[:10]))
@@ -502,7 +496,8 @@ def get_changed_blocks():
     logging.debug('find blocks-' + str(len(res)) + 'type- ' + repr(type(res)))
     return [x[0] for x in res]
 
-def copy_changed_bloсks(source_table, dest_table, modified_blocks):
+
+def copy_changed_bloсks(source_table, dest_table, modified_blocks, use_like=False):
     '''
     копирует измененные блоки данных из dev в shad
     '''
@@ -512,8 +507,14 @@ def copy_changed_bloсks(source_table, dest_table, modified_blocks):
     db = connect2db()
     cursor = db.cursor()
 
-    str_list = list_2SQL_list(modified_blocks)
-    delete_text = 'DELETE FROM ' + dest_table + ' WHERE FileName IN (' + str_list + ')'
+    if use_like:
+        logging.debug(repr(modified_blocks))
+        str_condition = 'or'.join([" (FileName LIKE \'"+x+"%\') " for x in modified_blocks if not x is None])
+    else:
+        str_condition = "FileName IN (\'" + "\',\'".join(modified_blocks) + "\')"
+
+    logging.debug('changed blocks: '+repr(str_condition))
+    delete_text = 'DELETE FROM ' + dest_table + ' WHERE ' + str_condition
     insert_text = '''INSERT INTO ''' + dest_table + '''
                             ([FileName]
                               ,[Creation]
@@ -529,8 +530,8 @@ def copy_changed_bloсks(source_table, dest_table, modified_blocks):
                               ,[DataSize]
                               ,[BinaryData]
                               ,[PartNo]
-                    FROM ''' + source_table + ''' AS dev
-                    WHERE dev.FileName IN (''' + str_list + ''')'''
+                    FROM ''' + source_table + '''
+                    WHERE''' + str_condition
 
     try:
         res = cursor.execute(delete_text)
@@ -544,7 +545,7 @@ def copy_changed_bloсks(source_table, dest_table, modified_blocks):
     db.close()
 
 
-def list_2SQL_list(items):
+def list_2SQL_list(items, var):
     sqllist = "\'" + "\',\'".join(items) + "\'"
     return sqllist
 
@@ -580,7 +581,7 @@ def get_changed_objects(changed_blocks):
 
 #++ work with filesystem
 
-def move_changed_files_to_wd(modified_files):
+def move_changed_files_to_wd(modified_files, **kargs:{}):
     '''
     собирает файлы, относящиеся к измененным блокам
     и копирует их в рабочий каталог
@@ -589,8 +590,13 @@ def move_changed_files_to_wd(modified_files):
     logging.debug('========move_changed_files_to_wd========')
 
     for file in modified_files:
-        shutil.copy(file, parameters['work_catalog'] + '\\' + os.path.basename(file))
-        logging.debug('copy ' + file + ' to ' + parameters['work_catalog'])
+        if kargs:
+            new_file_name = file.replace(kargs['catalog']+'\\', '').replace(kargs['old_sep'],kargs['new_sep'])
+        else:
+            new_file_name = os.path.basename(file)
+
+        shutil.copy(file, os.path.join(parameters['work_catalog'],new_file_name))
+        logging.debug('copy ' + file + ' to ' + parameters['work_catalog']+'\\'+new_file_name)
 
 
 def move_dummy_objects_to_wd(modified_objects):
@@ -667,7 +673,6 @@ def cat_configuration_xml(modified_objects, all_dependencies):
 
     substitute_string = '<ChildObjects>\n'
     substitute_string += parameters.get('conf_always_included', '') + '\n'
-    #todo: сделать стили через зависимости
 
     for modified_object in modified_objects:
         names_list = modified_object.split('.')
@@ -720,7 +725,7 @@ def dots2folders(source_catalog, destination_catalog, files_list=None):
     превращается в C:\Buh_korp\ChartOfCalculationTypes\Удержания\Form\ФормаСписка\Form\Module.txt
     """
     logging.debug('========dots2folders========')
-    logging.debug('source_catalog - '+source_catalog+', destination_catalog - '+destination_catalog)
+    logging.debug('source_catalog - ' + source_catalog + ', destination_catalog - ' + destination_catalog)
     begin_time = datetime.datetime.now()
 
     it_is_full_copying = files_list is None
@@ -773,6 +778,56 @@ def dots2folders(source_catalog, destination_catalog, files_list=None):
     logging.debug('время выполнения dots2folders - ' + str(datetime.datetime.now() - begin_time))
 
 
+def folder2dots(source_catalog, destination_catalog):
+    """
+    копирует файлы из source_catalog в destination_catalog
+    параллельно превращая иерархию папок в имя файла:
+    C:\Buh_korp\ChartOfCalculationTypes\Удержания\Form\ФормаСписка\Form\Module.txt
+    превращается в C:\1C2Git_files\full_text\ChartOfCalculationTypes.Удержания.Form.ФормаСписка.Form.Module.txt
+    """
+    logging.debug('========folder2dots========')
+    logging.debug('source_catalog - ' + source_catalog + ', destination_catalog - ' + destination_catalog)
+    begin_time = datetime.datetime.now()
+
+    for root, dirs, files in os.walk(source_catalog):
+        for file in files:
+            if ('.git' in root
+                or '.git' in file
+                or 'Readme.md' in file):
+                continue
+            full_old_name = os.path.join(root, file)
+            full_new_name = os.path.join(destination_catalog,
+                                    full_old_name.replace(source_catalog+'\\', '').replace('\\', '.'))
+            shutil.copy(full_old_name, full_new_name)
+
+    logging.debug('время выполнения folder2dots - ' + str(datetime.datetime.now() - begin_time))
+
+
+def copy_catalog(source_dir, destination_dir):
+    logging.debug('========copy_catalog========')
+    begin_time = datetime.datetime.now()
+
+    shutil.rmtree(destination_dir)
+    shutil.copytree(source_dir, destination_dir)
+
+    logging.debug('время выполнения copy_catalog - ' + str(datetime.datetime.now() - begin_time))
+
+
+def get_changed_files_list(modified_objects, catalog):
+    '''
+    возвращает список измененных файлов по списку объектов
+    '''
+    logging.debug('========get_changed_files_list========')
+    begin_time = datetime.datetime.now()
+
+    modified_files = []
+    for object_name in modified_objects:
+        #работаем с именем файла без расширения
+        modified_files.extend(glob.glob(catalog + '\\' + object_name + '*.*'))
+    logging.debug('изменено файлов ' + str(len(modified_files)))
+    return modified_files
+
+
 #++ work with 1C
 
 def import_1c():
@@ -797,9 +852,7 @@ def import_1c():
         output_str = ''
 
     if status != 0:
-        logging.error('fail to import files to 1C: ' + output_str)
-
-    assert status == 0, 'fail to import files to 1C: ' + output_str
+        log_and_raise_exc('fail to import files to 1C: ' + output_str)
 
 
 def export_1c():
@@ -827,33 +880,19 @@ def export_1c():
     assert status == 0, 'fail to export files from 1C: ' + output_str
 
 
-def get_changed_files_list(modified_objects, catalog):
-    '''
-    возвращает список измененных файлов по списку объектов
-    '''
-    logging.debug('========get_changed_files_list========')
+#++ main procedures
+def full_import():
+    """
+    загружаем в 1С данные из рабочего каталога git
+    """
+    logging.debug('========full_import========')
     begin_time = datetime.datetime.now()
 
-    modified_files = []
-    for object_name in modified_objects:
-        #работаем с именем файла без расширения
-        modified_files.extend(glob.glob(catalog + '\\' + object_name + '*.*'))
-    logging.debug('изменено файлов ' + str(len(modified_files)))
-    return modified_files
+    simply_empty_dir(parameters['work_catalog'])
+    folder2dots(parameters['git_work_catalog'], parameters['work_catalog'])
+    import_1c()
 
-
-#-- work with 1C
-
-#++ big procs
-
-def copy_catalog(source_dir, destination_dir):
-    logging.debug('========copy_catalog========')
-    begin_time = datetime.datetime.now()
-
-    shutil.rmtree(destination_dir)
-    shutil.copytree(source_dir, destination_dir)
-
-    logging.debug('время выполнения copy_catalog - ' + str(datetime.datetime.now() - begin_time))
+    logging.debug('время выполнения сценария - ' + str(datetime.datetime.now() - begin_time))
 
 
 def full_export():
@@ -890,6 +929,25 @@ def full_export():
     logging.debug('время выполнения сценария - ' + str(datetime.datetime.now() - begin_time))
 
 
+def unique_list(our_list):
+    return list({}.fromkeys(our_list).keys())
+
+
+def need_full_export(modified_objects):
+    if 'Configuration' in modified_objects:
+        logging.debug('Configuration in modified_objects, need full export')
+        return True
+
+    modified_classes = [x.split('.')[0] for x in modified_objects]
+    modified_classes_unique = unique_list(modified_classes)
+    unserved_classes = [x for x in modified_classes_unique if x not in served_classes]
+    if unserved_classes:
+        logging.debug('userved classes: ' + repr(unserved_classes))
+        return True
+    else:
+        return False
+
+
 def save_1c():
     '''
     Сохраняет измененные объекты 1С в рабочий каталог Git
@@ -899,16 +957,16 @@ def save_1c():
 
     tell2git_im_busy('проводится частичная выгрузка конфигурации')
 
-    with open(parameters['dumps_catalog']+'\\meta_table_list.dat', 'rb') as dump_file:
+    with open(parameters['dumps_catalog'] + '\\meta_table_list.dat', 'rb') as dump_file:
         meta_table_list.extend(pickle.load(dump_file))
 
-    with open(parameters['dumps_catalog']+'\\uuid_dict.dat', 'rb') as dump_file:
+    with open(parameters['dumps_catalog'] + '\\uuid_dict.dat', 'rb') as dump_file:
         uuid_dict.update(pickle.load(dump_file))
 
     modified_blocks = get_changed_blocks()
     modified_objects = get_changed_objects(modified_blocks)
-    logging.debug('modified_blocks '+repr(modified_blocks))
-    logging.debug('modified_objects '+repr(modified_objects))
+    logging.debug('modified_blocks ' + repr(modified_blocks))
+    logging.debug('modified_objects ' + repr(modified_objects))
 
     if len(modified_objects) == 0:
         logging.debug('nothing to export')
@@ -917,8 +975,8 @@ def save_1c():
 
     tell2git_im_busy(modified_objects)
 
-    if 'Configuration' in modified_objects:
-        logging.debug('need full export:' + repr(len(modified_objects)))
+    if need_full_export(modified_objects):
+        logging.debug('need full export')
         #full_export()
         return
 
@@ -927,11 +985,12 @@ def save_1c():
     logging.debug('empty folder ' + parameters['work_catalog'])
     simply_empty_dir(parameters['work_catalog'])
 
-    move_changed_files_to_wd(modified_files)
+    #move_always_included()
 
-    move_always_included()
-
+    #todo: динамически делать недостающие болванки
     all_dependencies = move_dummy_objects_to_wd(modified_objects)
+
+    move_changed_files_to_wd(modified_files)
 
     cat_configuration_xml(modified_objects, all_dependencies)
 
@@ -944,73 +1003,148 @@ def save_1c():
     export_1c()
 
     #Повторно получаем список файлов уже из  рабочего каталога
-    modified_files = get_changed_files_list(modified_objects,parameters['work_catalog'])
+    modified_files = get_changed_files_list(modified_objects, parameters['work_catalog'])
     dots2folders(parameters['work_catalog'], parameters['git_work_catalog'], modified_files)
 
     copy_changed_bloсks('[' + parameters['1c_shad_base'] + '].[dbo].[ConfigSave]',
                         '[' + parameters['1c_shad_base'] + '].[dbo].[Config]',
-                        modified_blocks)
+                        modified_blocks) #todo: что хотел сказать художник???
 
     tell2git_im_free()
 
     logging.debug('время выполнения save_1c - ' + str(datetime.datetime.now() - begin_time))
 
 
-def prepare():
+def load_1c():
+    '''
+    при смене ветки в git загружает новые данные в 1С
+    '''
+    logging.debug('========load_1c========')
     begin_time = datetime.datetime.now()
 
-    read_meta_table()
+    with open(parameters['dumps_catalog'] + '\\meta_table_list.dat', 'rb') as dump_file:
+        meta_table_list.extend(pickle.load(dump_file))
 
-    read_all_uuid()
+    with open(parameters['dumps_catalog'] + '\\uuid_dict.dat', 'rb') as dump_file:
+        uuid_dict.update(pickle.load(dump_file))
 
-    check_and_save_uuid_table()
 
-    logging.debug('время выполнения сценария - ', datetime.datetime.now() - begin_time)
+    with open(os.path.join(parameters['log_folder'],'branches.log')) as branches_log:
+        last_brunch = branches_log.read()
+
+    with open(os.path.join(parameters['git_work_catalog'],'.git', 'HEAD')) as branches_log:
+        new_brunch = branches_log.read().split('\n')[0].replace('ref: refs/heads/','')
+
+    output = subprocess.check_output(["C:\Program Files (x86)\Git\\bin\git.exe", '-C', parameters['git_work_catalog'],
+                                      'diff', 'HEAD', last_brunch, '--name-only']).decode()
+    logging.debug(repr(output))
+    lines_list = output.split('\n')[:-1]
+    logging.debug(repr(lines_list))
+    modified_files = [os.path.join(parameters['git_work_catalog'],x.replace('/', '\\')) for x in lines_list]
+    logging.debug('modified_files ' + repr(modified_files))
+
+    modified_objects = unique_list(['.'.join(x.split('/')[:2]) for x in lines_list])
+    logging.debug('modified_objects ' + repr(modified_objects))
+
+    #todo: если изменен configuration.xml - полная загрузка
+
+    if len(modified_objects) == 0:
+        logging.debug('nothing to export')
+        return
+
+    depended_files = get_changed_files_list(modified_objects, parameters['full_text_catalog'])
+    logging.debug('depended_files ' + repr(depended_files))
+
+    simply_empty_dir(parameters['work_catalog'])
+
+    #move_always_included()
+
+    #todo:  динамический поиск зависимостей
+    #todo: при необходимости - динамическая генерация болванки (dummy)
+    all_dependencies = move_dummy_objects_to_wd(modified_objects)
+
+    move_changed_files_to_wd(depended_files)
+    move_changed_files_to_wd(modified_files,catalog=parameters['git_work_catalog'], old_sep='\\', new_sep='.')
+
+    cat_configuration_xml(modified_objects, all_dependencies)
+
+    import_1c()
+
+    copy_changed_bloсks('[' + parameters['1c_shad_base'] + '].[dbo].[ConfigSave]',
+                        '[' + parameters['1c_dev_base'] + '].[dbo].[ConfigSave]',
+                        [get_file_uuid(file) for file in depended_files if file[-4:] == '.xml'],
+                        True)
+
+    #todo: перезапустить конфигуратор
+
+    with open(os.path.join(parameters['log_folder'],'branches.log'),'w') as branches_log:
+        branches_log.write(new_brunch)
+
+    logging.debug('время выполнения load_1c - ' + str(datetime.datetime.now() - begin_time))
 
 
 def run_tst_func():
     #full_export()
     #save_1c()
     #import_1c()
+    logging.debug('========save_1c========')
+    begin_time = datetime.datetime.now()
 
-    '''with open('meta_table_list.dat', 'rb') as dump_file:
-        meta_table_list.extend(pickle.load(dump_file))
-    v=[x for x in meta_table_list if x['name']=='Банки']
-    print(v)'''
 
-    '''
-    logging.debug('обновляем таблицу соответствий метаданных')
-    read_meta_table()
-    read_all_uuid()
-    check_and_save_uuid_table() '''
-    #dots2folders(parametrs['work_catalog'], parametrs['git_work_catalog'])
+    #пробуем вытащить разницу из git
+    # head_text = open(os.path.join(parameters['git_work_catalog'], '.git', 'HEAD')).read()
+    # path_to_to_head=head_text.replace('ref: ', '').replace('\n','')
+    # path_to_last_commit = os.path.join(parameters['git_work_catalog'], '.git', *path_to_to_head.split('/'))
+    # last_commit_hash = open(path_to_last_commit).read()
+    # print(4,last_commit_hash)
+    #
+    # p1 = subprocess.Popen(["echo", "Hello World!"], stdout=subprocess.PIPE)
+    # output = p1.communicate()[0]
+    # print(output)
+    #
+    #
+    # # output = subprocess.check_output(['C:\Program Files (x86)\Git\\bin\git.exe', 'cat-file', '-p', 'HEAD'])
+    # # output_decoded = output.decode("utf-8")
+    # # print(output_decoded)
 
-    '''
-    read_meta_table()
-    read_all_uuid()
-    check_and_save_uuid_table()'''
+    #сравниваем sha-1 git_work и full_text - долго
+    # git_work_catalog = parameters['git_work_catalog']
+    # full_text_catalog = parameters['full_text_catalog']
+    #
+    # for root, dirs, files in os.walk(git_work_catalog):
+    #     for file in files:
+    #         if ('.git' in root
+    #             or '.git' in file
+    #             or 'README.md' in file):
+    #             continue
+    #         with open(os.path.join(root, file), "rb") as f:
+    #             git_hash = hashlib.sha1(f.read()).hexdigest()
+    #         dotted_name = os.path.join(full_text_catalog,
+    #                                 os.path.join(root, file).replace(git_work_catalog+'\\', '').replace('\\', '.'))
+    #         with open(os.path.join(dotted_name), "rb") as f:
+    #             c_hash = hashlib.sha1(f.read()).hexdigest()
+    #         if not git_hash == c_hash:
+    #             print(dotted_name)
 
-    #logging.debug('обновляем папку стабов')
-    #fill_dummy_catalog()
 
-    #logging.error(repr(parameters))
+    # all_dot_files = os.listdir(parameters['full_text_catalog'])
+    # cat = parameters['full_text_catalog']
+    # for f in all_dot_files:
+    #     with open(os.path.join(cat, f),'rb') as file:
+    #         file1_hash = hashlib.sha1(file.read()).hexdigest()
 
-    #tell2git_im_free()
-
-    '''with open(get_param('script_catalog') + '\\uuid_dict.dat', 'rb') as dump_file:
-        uuid_dict.update(pickle.load(dump_file))
-    print(uuid_dict['9ed016b2-2a4a-43a1-a336-6b13d68b3d0a'])'''
+    print('время выполнения run_tst_func - ' + str(datetime.datetime.now() - begin_time))
 
 
 if __name__ == '__main__':
-
     format_string = u'%(filename)s[LINE:%(lineno)d]# %(levelname)-8s [%(asctime)s]  %(message)s'
-    file_name = os.path.join(os.path.dirname(sys.argv[2])+'\\logs\\work_log_' + datetime.datetime.now().strftime("%d_%m_%Y_%H_%M") + '.txt')
+    file_name = os.path.join(os.path.dirname(sys.argv[2]) + '\\logs\\work_log_' + datetime.datetime.now().strftime(
+        "%d_%m_%Y_%H_%M") + '.txt')
     logging.basicConfig(filename=file_name, level=logging.DEBUG, format=format_string)
 
-    #todo: проверить что 3 аргуметом идет именно *.cfg
-    read_ini_file(sys.argv[2])
 
+    #todo: проверить что 3 аргументом идет именно *.cfg
+    read_ini_file(sys.argv[2])
 
     if sys.argv[1] == '-t':
         run_tst_func()
@@ -1022,7 +1156,13 @@ if __name__ == '__main__':
         print('export from 1C to git')
         print('-s: partially export to git')
         print('-sa: full export to git')
-        print('see logs in '+parameters['log_folder'].replace(u'\\\\', '\\'))
+        #print('-l: partially import to 1C')
+        print('-la: full import to 1C')
+        print('see logs in ' + parameters['log_folder'].replace(u'\\\\', '\\'))
+    elif sys.argv[1] == '-la':  #load all
+        full_import()
+    elif sys.argv[1] == '-l':  #load
+        load_1c()
     else:
         logging.error('wrong parameters ' + sys.argv[1:])
     
